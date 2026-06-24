@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 - docs: 新增英文 README（README.en.md）与中英文顶部语言切换
+- chore: `plugin.xml` vendor 修正为 byteyang；GitHub 仓库描述与 topics 已配置
 
 - fix(ci): gradlew 在 Linux runner 无执行权限导致 Actions 失败（`chmod +x` + workflow 兜底）
 

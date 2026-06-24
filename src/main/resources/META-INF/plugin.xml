@@ -2,7 +2,7 @@
     <id>com.byteyang.nexusmcp</id>
     <name>Nexus MCP</name>
     <version>0.0.0</version>
-    <vendor>NexusMCP</vendor>
+    <vendor>byteyang</vendor>
 
     <description><![CDATA[
         Nexus MCP - MCP proxy for Unreal Engine via JetBrains Rider.<br/>
