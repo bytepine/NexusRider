@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- docs: README 外链仅指向公开仓（NexusRider / NexusLink Releases），移除 NexusMCP 等内部仓链接
+
 ## [1.3.5] - 2026-06-09
 
 - 修复 AI 客户端（Cursor/Codebuddy）重连后工具列表不刷新、调用失败：`initialized` 完成时预热 tools/list 并推送 `list_changed`；同端口 WS 恢复时补发通知；断线期间保留工具缓存

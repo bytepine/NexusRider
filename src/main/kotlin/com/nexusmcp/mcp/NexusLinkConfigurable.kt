@@ -87,7 +87,7 @@ class NexusLinkConfigurable : Configurable {
             // ── UE 实例发现 ─────────────────────────────────────────
             group("UE 实例发现") {
                 row {
-                    comment("进程枚举（主路径）自动感知 UE 编辑器进程，端口扫描仅在进程枚举无结果时触发。")
+                    comment("并发端口扫描：对范围内端口发 GET /status，探测已启用 NexusLink MCP 的 UE 实例。")
                 }
                 row("扫描端口范围:") {
                     intTextField(1024..65535)
