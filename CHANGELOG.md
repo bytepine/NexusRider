@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- fix(ci): gradlew 在 Linux runner 无执行权限导致 Actions 失败（`chmod +x` + workflow 兜底）
+
 ## [1.3.6] - 2026-06-24
 
 - docs: README 独立仓自包含重写（架构图、安装配置、代理工具参考、FAQ、公开仓 Releases 链接）
