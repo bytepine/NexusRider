@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- docs: 新增英文 README（README.en.md）与中英文顶部语言切换
+
 - fix(ci): gradlew 在 Linux runner 无执行权限导致 Actions 失败（`chmod +x` + workflow 兜底）
 
 ## [1.3.6] - 2026-06-24
