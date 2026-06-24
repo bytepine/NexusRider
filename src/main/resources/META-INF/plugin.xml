@@ -1,0 +1,44 @@
+<idea-plugin>
+    <id>com.byteyang.nexusmcp</id>
+    <name>Nexus MCP</name>
+    <version>0.0.0</version>
+    <vendor>NexusMCP</vendor>
+
+    <description><![CDATA[
+        Nexus MCP - MCP proxy for Unreal Engine via JetBrains Rider.<br/>
+        Runs an independent MCP server that discovers and connects to UE instances running NexusLink.<br/>
+        <b>Features:</b>
+        <ul>
+          <li>Discover multiple Unreal Engine instances</li>
+          <li>Connect/switch between UE instances</li>
+          <li>Proxy MCP tool calls to connected UE instance</li>
+        </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.rider</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- 通知组：MCP 服务器状态提醒 -->
+        <notificationGroup id="NexusMCP" displayType="BALLOON" isLogByDefault="true"/>
+        <!-- 配置持久化 -->
+        <applicationService
+            serviceImplementation="com.nexusmcp.mcp.NexusLinkSettings"/>
+
+        <!-- 项目打开后启动独立 MCP 服务器 -->
+        <postStartupActivity
+            implementation="com.nexusmcp.mcp.NexusLinkStartupActivity"/>
+
+        <!-- 状态栏组件：显示当前 UE 连接状态，点击可切换实例 -->
+        <statusBarWidgetFactory
+            id="NexusLinkStatus"
+            implementation="com.nexusmcp.mcp.NexusLinkStatusBarWidgetFactory"/>
+
+        <!-- 设置面板：Tools > Nexus MCP -->
+        <applicationConfigurable
+            parentId="tools"
+            instance="com.nexusmcp.mcp.NexusLinkConfigurable"
+            id="com.nexusmcp.mcp.NexusLinkConfigurable"
+            displayName="Nexus MCP"/>
+    </extensions>
+</idea-plugin>
