@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- chore(ci): Release 强制 `--verify` 门禁，正文仅来源于 CHANGELOG 段落（禁手写 Release 说明）
+- docs: README 补充发版流程（与 NexusLink / NexusVSCode 一致）
 - chore(ci): 新增 tag 触发 Release workflow，CI 自动打包并发布 GitHub Release
 - docs: 新增英文 README（README.en.md）与中英文顶部语言切换
 - chore: `plugin.xml` vendor 修正为 byteyang；GitHub 仓库描述与 topics 已配置

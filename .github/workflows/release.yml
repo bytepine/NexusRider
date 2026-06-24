@@ -50,11 +50,15 @@ jobs:
           chmod +x gradlew
           python scripts/build_rider.py --version "${{ steps.meta.outputs.version }}" --output release/
 
-      - name: Extract release notes
+      - name: Extract release notes from CHANGELOG
         run: |
-          python scripts/extract_release_notes.py \
-            --version "${{ steps.meta.outputs.version }}" \
+          VERSION="${{ steps.meta.outputs.version }}"
+          # 门禁：VERSION 与 CHANGELOG [X.Y.Z] 必须就绪；body 仅来源于 CHANGELOG，禁止手写
+          python scripts/extract_release_notes.py --version "$VERSION" --verify \
             --output release-notes.md
+          echo "--- Release notes preview (CHANGELOG [$VERSION]) ---"
+          cat release-notes.md
+          echo "--- end ---"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -63,3 +67,4 @@ jobs:
           body_path: release-notes.md
           files: release/nexus-mcp-rider-${{ steps.meta.outputs.version }}.zip
           generate_release_notes: false
+          overwrite: true
