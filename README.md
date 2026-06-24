@@ -1,6 +1,6 @@
 # nexus-rider — Rider 插件
 
-**当前版本：1.3.5** · 插件 ID：`com.byteyang.nexusmcp`
+**当前版本：1.3.6** · 插件 ID：`com.byteyang.nexusmcp`
 
 JetBrains Rider 端 MCP **代理**插件：在本地运行独立 MCP HTTP 服务器（默认 `:6800`），自动发现 UE 实例，经 WebSocket 将 AI 工具调用转发给 **NexusLink** UE 插件。蓝图、资产、PIE 等具体能力均由 UE 侧 NexusLink 提供，本插件不实现游戏逻辑。
 

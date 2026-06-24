@@ -41,6 +41,7 @@ Thumbs.db
 desktop.ini
 
 # --- Build Artifacts ---
+release/
 *.log
 *.tmp
 *.bak

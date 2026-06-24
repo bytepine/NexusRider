@@ -7,7 +7,11 @@
 
 ## [Unreleased]
 
-- docs: README 外链仅指向公开仓（NexusRider / NexusLink Releases），移除 NexusMCP 等内部仓链接
+## [1.3.6] - 2026-06-24
+
+- docs: README 独立仓自包含重写（架构图、安装配置、代理工具参考、FAQ、公开仓 Releases 链接）
+- docs: 设置面板 UE 发现说明修正（移除已废弃的进程枚举描述）
+- chore: 新增 `scripts/build_rider.py` 与 GitHub Actions 构建工作流
 
 ## [1.3.5] - 2026-06-09
 
