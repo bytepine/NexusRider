@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- chore(ci): 新增 tag 触发 Release workflow，CI 自动打包并发布 GitHub Release
 - docs: 新增英文 README（README.en.md）与中英文顶部语言切换
 - chore: `plugin.xml` vendor 修正为 byteyang；GitHub 仓库描述与 topics 已配置
 
