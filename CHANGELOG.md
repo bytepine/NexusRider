@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- docs: README 移除手写「当前版本 / 插件 ID」行（版本以 CHANGELOG/Releases 为准）
 - docs: 优化 `plugin.xml` `<description>` 概览（英文为主 + 中文；补 NexusLink GitHub/Releases 链接、安装与启用步骤、绑定 127.0.0.1 无遥测声明）
 - chore: 新增插件图标 `META-INF/pluginIcon.svg` 与暗色 `pluginIcon_dark.svg`（40×40，六边形 + 连接枢纽，满足 Marketplace logo 规范）
 - chore(ci): Release 强制 `--verify` 门禁，正文仅来源于 CHANGELOG 段落（禁手写 Release 说明）

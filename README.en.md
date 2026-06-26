@@ -2,8 +2,6 @@
 
 # nexus-rider — Rider Plugin
 
-**Current version: 1.3.6** · Plugin ID: `com.byteyang.nexusmcp`
-
 JetBrains Rider MCP **proxy** plugin: runs a standalone MCP HTTP server locally (default `:6800`), auto-discovers UE instances, and forwards AI tool calls to the **NexusLink** UE plugin over WebSocket. Blueprint, asset, PIE, and other capabilities are provided by NexusLink on the UE side; this plugin does not implement game logic.
 
 ---
