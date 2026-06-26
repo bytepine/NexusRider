@@ -5,42 +5,6 @@
     <vendor>byteyang</vendor>
 
     <description><![CDATA[
-        <p><b>Nexus MCP</b> 让 JetBrains Rider 充当 <b>Unreal Engine</b> 的 MCP 代理：本地运行
-        MCP 服务器（默认端口 <code>6800</code>），自动发现正在运行的 UE 编辑器/PIE 实例，并经
-        WebSocket 把 AI 工具调用转发给它们。AI 客户端（Cursor、CodeBuddy、Windsurf 等）只需连接
-        一个固定端点，由 Rider 负责实例发现、长连接维持以及在多个 UE 实例间切换。</p>
-
-        <p>蓝图、资产、PIE 控制、材质等引擎能力由 UE 侧的 <b>NexusLink</b> 插件提供——本插件仅做
-        代理，不实现游戏逻辑。</p>
-
-        <p><b>需配合 UE 插件：</b>
-        <a href="https://github.com/bytepine/NexusLink">NexusLink（GitHub）</a> ·
-        <a href="https://github.com/bytepine/NexusLink/releases">下载（Releases）</a>。
-        将 <code>nexus-mcp-unreal-*.zip</code> 解压到项目的
-        <code>Plugins/Developer/NexusLink</code>，启用后在
-        <i>Editor Preferences &gt; Plugins &gt; NexusLink &gt; Enable MCP Server</i> 勾选开启。</p>
-
-        <p><b>快速开始：</b></p>
-        <ul>
-          <li>在 Rider 中打开一个项目（MCP 服务器按项目启动，欢迎界面不启动）</li>
-          <li>在 <i>Settings &gt; Tools &gt; Nexus MCP</i> 勾选启用（默认关闭）</li>
-          <li>将 AI 客户端指向 <code>http://127.0.0.1:6800/stream</code></li>
-        </ul>
-
-        <p><b>功能：</b></p>
-        <ul>
-          <li>独立的基于 Netty 的 MCP HTTP 服务器（Streamable HTTP + SSE），按会话隔离</li>
-          <li>通过端口扫描自动发现多个 UE 实例</li>
-          <li>在状态栏连接 / 切换 UE 实例</li>
-          <li>透明转发工具调用；多实例查询支持按调用指定 <code>targetPort</code></li>
-        </ul>
-
-        <p>源码与文档：
-        <a href="https://github.com/bytepine/NexusRider">github.com/bytepine/NexusRider</a>。
-        所有网络通信均绑定 <code>127.0.0.1</code>，不采集任何遥测数据。</p>
-
-        <hr/>
-
         <p><b>Nexus MCP</b> turns JetBrains Rider into an MCP proxy for <b>Unreal Engine</b>.
         It runs a local MCP server (default port <code>6800</code>), auto-discovers running UE
         editor/PIE instances, and forwards AI tool calls to them over WebSocket. Your AI client
@@ -76,6 +40,42 @@
         <p>Source &amp; docs:
         <a href="https://github.com/bytepine/NexusRider">github.com/bytepine/NexusRider</a>.
         All network traffic is bound to <code>127.0.0.1</code>; no telemetry is collected.</p>
+
+        <hr/>
+
+        <p><b>Nexus MCP</b> 让 JetBrains Rider 充当 <b>Unreal Engine</b> 的 MCP 代理：本地运行
+        MCP 服务器（默认端口 <code>6800</code>），自动发现正在运行的 UE 编辑器/PIE 实例，并经
+        WebSocket 把 AI 工具调用转发给它们。AI 客户端（Cursor、CodeBuddy、Windsurf 等）只需连接
+        一个固定端点，由 Rider 负责实例发现、长连接维持以及在多个 UE 实例间切换。</p>
+
+        <p>蓝图、资产、PIE 控制、材质等引擎能力由 UE 侧的 <b>NexusLink</b> 插件提供——本插件仅做
+        代理，不实现游戏逻辑。</p>
+
+        <p><b>需配合 UE 插件：</b>
+        <a href="https://github.com/bytepine/NexusLink">NexusLink（GitHub）</a> ·
+        <a href="https://github.com/bytepine/NexusLink/releases">下载（Releases）</a>。
+        将 <code>nexus-mcp-unreal-*.zip</code> 解压到项目的
+        <code>Plugins/Developer/NexusLink</code>，启用后在
+        <i>Editor Preferences &gt; Plugins &gt; NexusLink &gt; Enable MCP Server</i> 勾选开启。</p>
+
+        <p><b>快速开始：</b></p>
+        <ul>
+          <li>在 Rider 中打开一个项目（MCP 服务器按项目启动，欢迎界面不启动）</li>
+          <li>在 <i>Settings &gt; Tools &gt; Nexus MCP</i> 勾选启用（默认关闭）</li>
+          <li>将 AI 客户端指向 <code>http://127.0.0.1:6800/stream</code></li>
+        </ul>
+
+        <p><b>功能：</b></p>
+        <ul>
+          <li>独立的基于 Netty 的 MCP HTTP 服务器（Streamable HTTP + SSE），按会话隔离</li>
+          <li>通过端口扫描自动发现多个 UE 实例</li>
+          <li>在状态栏连接 / 切换 UE 实例</li>
+          <li>透明转发工具调用；多实例查询支持按调用指定 <code>targetPort</code></li>
+        </ul>
+
+        <p>源码与文档：
+        <a href="https://github.com/bytepine/NexusRider">github.com/bytepine/NexusRider</a>。
+        所有网络通信均绑定 <code>127.0.0.1</code>，不采集任何遥测数据。</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
