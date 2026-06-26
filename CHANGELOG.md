@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- chore: 新增插件图标 `META-INF/pluginIcon.svg` 与暗色 `pluginIcon_dark.svg`（40×40，六边形 + 连接枢纽，满足 Marketplace logo 规范）
 - chore(ci): Release 强制 `--verify` 门禁，正文仅来源于 CHANGELOG 段落（禁手写 Release 说明）
 - docs: README 补充发版流程（与 NexusLink / NexusVSCode 一致）
 - chore(ci): 新增 tag 触发 Release workflow，CI 自动打包并发布 GitHub Release
