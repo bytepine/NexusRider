@@ -325,6 +325,12 @@ class NexusMcpDispatcher(
             return makeError(id, INVALID_PARAMS, "Invalid port: $port")
         }
         val success = unrealManager.connectTo(port, setPreferred = true)
+        if (success) {
+            // 连接成功后主动预热工具缓存并推送 tools/list_changed；
+            // refresh task 跑到时 wasWsOpen 已为 true，无法再检测新连接事件，须在此主动触发。
+            try { unrealManager.fetchToolsList() } catch (_: Exception) { }
+            onSessionReady?.invoke()
+        }
         val msg = if (success) "已连接到 UE 实例 (端口 $port)" else "连接失败：端口 $port 无响应"
         val content = JSONArray().put(JSONObject().apply {
             put("type", "text")
