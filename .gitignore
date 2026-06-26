@@ -54,6 +54,10 @@ release/
 # --- Local config ---
 local.properties
 
+# --- Python (打包脚本缓存) ---
+__pycache__/
+*.pyc
+
 # --- Temp ---
 .build_temp/
 
