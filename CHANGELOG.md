@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-06-26
+
+- fix(api): `NexusMcpDispatcher` 版本读取改用公开 API `PluginManager.getPluginByClass()`，消除 `PluginManagerCore`（Internal API）警告
+- fix(api): `NexusLinkStatusBarWidget.getPresentation()` 加 `@Suppress("OVERRIDE_DEPRECATION")`；移除 `StatusBarWidgetFactory.canBeEnabledOn()` 废弃覆写（253+ 默认 true），消除 Marketplace 验证器 deprecated/internal API 告警
+
 ## [1.4.1] - 2026-06-26
 
 - docs: `plugin.xml` `<description>` 双语顺序改为英文在前、中文在后，满足 JetBrains Marketplace 校验要求

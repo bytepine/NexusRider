@@ -2,9 +2,8 @@
 
 package com.nexusmcp.mcp
 
-import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.ide.plugins.PluginManager
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.extensions.PluginId
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -49,7 +48,7 @@ class NexusMcpDispatcher(
 
         /** 运行时读取插件版本（打包后为真实版本号，IDE 开发时回退 "0.0.0"）。 */
         private val SERVER_VERSION: String by lazy {
-            PluginManagerCore.getPlugin(PluginId.getId("com.byteyang.nexusmcp"))?.version ?: "0.0.0"
+            PluginManager.getPluginByClass(NexusMcpDispatcher::class.java)?.version ?: "0.0.0"
         }
 
         /** initialize 握手时 UE 预热的最大等待时间（超时先返回 prefix，后台继续）。 */
