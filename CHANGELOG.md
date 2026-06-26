@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-26
+
 - docs: `plugin.xml` `<description>` 调整为中文在前、英文在后，并补全中文段落（概览/能力/安装/快速开始/功能/隐私），与 NexusVSCode 商店描述双语顺序一致
 - docs: README「依赖与版本兼容」移除 nexus-rider 自身版本号（`≥ 1.3.3`），改为「建议使用最新版」（避免随发版漂移；保留 UE 4.26+ / Rider 2025.3 等环境要求）
 - feat(unreal): 新增应用层保活 ping（忙 5s / 闲 15s），复用 `reconnectExecutor`；`connectTo` 成功后启动、`resetWsConnection` 时取消，替代库层 `connectionLostTimeout=0` 的纯被动策略（与 VSCode `WS_KEEPALIVE` 常量对齐）
