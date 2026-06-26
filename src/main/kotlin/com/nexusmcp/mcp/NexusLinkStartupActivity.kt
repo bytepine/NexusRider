@@ -65,6 +65,15 @@ class NexusLinkStartupActivity : ProjectActivity {
             val server = NexusMcpServer(manager)
             val port   = findAvailablePort(settings.mcpPort)
 
+            // 检测 MCP 端口与 UE 扫描区间重叠，误配时 AI 会把代理自身当 UE 实例扫到
+            val scanMin = minOf(settings.scanPortStart, settings.scanPortEnd)
+            val scanMax = maxOf(settings.scanPortStart, settings.scanPortEnd)
+            if (settings.mcpPort in scanMin..scanMax) {
+                val warnMsg = "MCP 端口 ${settings.mcpPort} 与 UE 扫描区间 [$scanMin, $scanMax] 重叠，可能导致代理端口被误当 UE 实例探测，请调整配置"
+                log.warn(warnMsg)
+                notifyError(project, warnMsg)
+            }
+
             if (port < 0) {
                 log.error("端口 ${settings.mcpPort} 及后续 100 个端口均被占用")
                 notifyError(project, "端口 ${settings.mcpPort} 及后续 100 个端口均被占用，MCP 服务器未能启动")

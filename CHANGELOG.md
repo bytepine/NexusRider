@@ -9,6 +9,20 @@
 
 - docs: `plugin.xml` `<description>` 调整为中文在前、英文在后，并补全中文段落（概览/能力/安装/快速开始/功能/隐私），与 NexusVSCode 商店描述双语顺序一致
 - docs: README「依赖与版本兼容」移除 nexus-rider 自身版本号（`≥ 1.3.3`），改为「建议使用最新版」（避免随发版漂移；保留 UE 4.26+ / Rider 2025.3 等环境要求）
+- feat(unreal): 新增应用层保活 ping（忙 5s / 闲 15s），复用 `reconnectExecutor`；`connectTo` 成功后启动、`resetWsConnection` 时取消，替代库层 `connectionLostTimeout=0` 的纯被动策略（与 VSCode `WS_KEEPALIVE` 常量对齐）
+- feat(ui): 状态栏弹窗在已连接时新增「⊘ 断开连接」选项，调用 `manager.disconnect()`（与 VSCode 断开命令对齐）
+- feat(ui): 配置面板「接入 AI 客户端」区域新增「复制」按钮，一键将当前预览配置写入系统剪贴板（与 VSCode `copyMcpConfig` 对齐）
+- fix(unreal): `probeStatus` `connectTimeout` 500→1000ms，与 VSCode HTTP 探测超时对齐
+- fix(mcp): `handlePost` 改用 JSON 解析判定 `initialize`，避免工具参数含该子串时误判新建无用会话（失败回退原 `contains` 保持容错）
+- feat(mcp): `httpSessions` 改为有序 `LinkedHashMap`（synchronized）；超 50 条时淘汰最旧的非当前会话，防循环重连内存增长
+- feat(ui): 配置面板「复制」按钮在预览为占位文本或空白时静默 no-op，避免误复制提示文字
+- feat(mcp): `NexusMcpDispatcher.SERVER_VERSION` 改为 lazy 运行时读取 `PluginManagerCore`，打包后 `serverInfo.version` 即真实版本号
+- feat(ui): 配置面板「Streamable HTTP 配置」与「SSE 配置」按钮点击时读输入框实时端口值，修改端口后无需 apply 即可生成正确配置；hint 文案改为动态提示
+- feat(mcp): SSE 长连接每 20s 通过 Netty eventLoop 写注释心跳帧 `: keepalive`，`closeFuture` 取消调度，避免经反代/NAT idle 被断开导致推送丢失
+- fix(unreal): `probeStatus` 新增 `Content-Length` 超限快速跳过 + 分块读取上限（64KB），防异常端口返回超大 body 占内存
+- perf(mcp): `handleInitialize` 预热加 2s 超时（`INITIALIZE_WARMUP_MS`）；用 `Future.get(2s)` 限时等待，超时先返回 prefix，warmupFuture 后台继续，避免全端口扫描阻塞握手
+- perf(unreal): `forwardToolCallToPort` 优先用 `instances` 缓存解析 `wsPort`，缓存缺失才回退 `probeStatus`，省跨实例并发查询的冗余 HTTP 往返
+- feat: `startServer` 检测 `mcpPort ∈ [scanMin, scanMax]` 时 `log.warn` + `notifyError` 告警，防误配导致代理端口被当 UE 实例探测
 
 ## [1.3.7] - 2026-06-26
 

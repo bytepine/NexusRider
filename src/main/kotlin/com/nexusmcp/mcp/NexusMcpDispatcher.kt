@@ -2,9 +2,15 @@
 
 package com.nexusmcp.mcp
 
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.extensions.PluginId
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * MCP 会话状态。
@@ -40,7 +46,14 @@ class NexusMcpDispatcher(
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
         private const val SERVER_NAME = "Nexus-Rider"
-        private const val SERVER_VERSION = "0.0.0"
+
+        /** 运行时读取插件版本（打包后为真实版本号，IDE 开发时回退 "0.0.0"）。 */
+        private val SERVER_VERSION: String by lazy {
+            PluginManagerCore.getPlugin(PluginId.getId("com.byteyang.nexusmcp"))?.version ?: "0.0.0"
+        }
+
+        /** initialize 握手时 UE 预热的最大等待时间（超时先返回 prefix，后台继续）。 */
+        private const val INITIALIZE_WARMUP_MS = 2_000L
 
         // JSON-RPC 2.0 错误码
         private const val PARSE_ERROR = -32700
@@ -116,15 +129,26 @@ class NexusMcpDispatcher(
         val clientVersion = params?.optString("protocolVersion", "") ?: ""
         val negotiatedVersion = if (clientVersion.isNotBlank()) clientVersion else PROTOCOL_VERSION
 
-        // 握手时主动 discover + 连 Editor，再拉 proxy_config / instructions
+        // 握手时主动 discover + 连 Editor，再拉 proxy_config / instructions。
+        // 加 INITIALIZE_WARMUP_MS 上限：超时先返回 prefix，后台继续预热，避免全端口扫描阻塞握手。
         var upstream = unrealManager.getUpstreamInstructions()
+        val warmupExecutor = Executors.newSingleThreadExecutor()
+        val warmupFuture: Future<*> = warmupExecutor.submit {
+            try {
+                unrealManager.maintainConnection()
+                if (unrealManager.isWsOpen()) {
+                    unrealManager.fetchProxyConfig()
+                    upstream = unrealManager.fetchUpstreamInstructions()
+                }
+            } catch (_: Exception) { /* UE 未运行时仍返回 prefix */ }
+        }
         try {
-            unrealManager.maintainConnection()
-            if (unrealManager.isWsOpen()) {
-                unrealManager.fetchProxyConfig()
-                upstream = unrealManager.fetchUpstreamInstructions()
-            }
-        } catch (_: Exception) { /* UE 未运行时仍返回 prefix */ }
+            warmupFuture.get(INITIALIZE_WARMUP_MS, TimeUnit.MILLISECONDS)
+        } catch (_: TimeoutException) {
+            // 超时先返回，warmupFuture 在后台继续执行，为下次 tools/call 预热缓存
+            log.info("initialize 预热超时（${INITIALIZE_WARMUP_MS}ms），先返回 prefix，后台继续预热")
+        } catch (_: Exception) { /* 其他异常忽略 */ }
+        warmupExecutor.shutdown()
 
         val activeConfig = unrealManager.getProxyConfig()
         val connectedNote = if (unrealManager.isWsOpen()) {

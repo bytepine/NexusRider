@@ -11,6 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.java_websocket.client.WebSocketClient
@@ -94,6 +95,9 @@ class UnrealInstanceManager {
         /** 并发端口扫描的线程数上限。 */
         private const val SCAN_THREAD_COUNT = 20
 
+        /** probeStatus 响应体读取上限，防异常端口返回超大 body 占内存。 */
+        private const val PROBE_MAX_BYTES = 65_536
+
         /** tools/call 默认超时：资产搜索等 GameThread 任务常超过 5s。 */
         const val TOOLS_CALL_TIMEOUT_MS = 120_000L
 
@@ -102,6 +106,12 @@ class UnrealInstanceManager {
 
         /** 长连接存活时，每隔 N 次维护轮才做一次全端口扫描；其余轮仅探测 connectedPort。 */
         private const val FULL_SCAN_EVERY_N_TICKS = 6
+
+        /** 有挂起请求时（忙）的应用层保活 ping 间隔（与 VSCode WS_KEEPALIVE_BUSY_MS 对齐）。 */
+        private const val WS_KEEPALIVE_BUSY_MS = 5_000L
+
+        /** 无挂起请求时（闲）的应用层保活 ping 间隔（与 VSCode WS_KEEPALIVE_IDLE_MS 对齐）。 */
+        private const val WS_KEEPALIVE_IDLE_MS = 15_000L
     }
 
     /** 连接状态变更串行锁：防止扫描定时器与 onClose 重扫叠加导致连接抖动。 */
@@ -129,6 +139,9 @@ class UnrealInstanceManager {
 
     /** 当前活跃的 WebSocket 连接（多线程访问，需 @Volatile 保证可见性）。 */
     @Volatile private var wsClient: WebSocketClient? = null
+
+    /** 当前应用层保活 ping 任务句柄，resetWsConnection 时取消。 */
+    @Volatile private var pingFuture: ScheduledFuture<*>? = null
 
     /**
      * 工具列表缓存。
@@ -293,6 +306,8 @@ class UnrealInstanceManager {
             if (success && wsClient?.isOpen == true) {
                 connectedPort = port
                 connectedToolsListMode = info.toolsListMode
+                // 启动应用层保活 ping（忙 5s / 闲 15s），替代库层 connectionLostTimeout
+                schedulePing()
                 // 异步拉取 UE 端 instructions 缓存，供下次 handleInitialize 拼接
                 reconnectExecutor.execute {
                     try {
@@ -321,6 +336,9 @@ class UnrealInstanceManager {
     /** 关闭 WS 并重置连接状态；clearPreferred 仅用户主动断开时为 true。 */
     private fun resetWsConnection(clearPreferred: Boolean) {
         connectionEpoch.incrementAndGet()
+        // 取消保活 ping
+        pingFuture?.cancel(false)
+        pingFuture = null
         pendingRequests.values.forEach { (latch, _) -> latch.countDown() }
         pendingRequests.clear()
         wsClient?.close()
@@ -333,6 +351,23 @@ class UnrealInstanceManager {
         if (clearPreferred) {
             preferredPort = -1
         }
+    }
+
+    /**
+     * 启动应用层保活 ping 循环：
+     * 有挂起请求（忙）→ WS_KEEPALIVE_BUSY_MS，无（闲）→ WS_KEEPALIVE_IDLE_MS。
+     * 复用 reconnectExecutor，无需额外线程池。
+     */
+    private fun schedulePing() {
+        pingFuture?.cancel(false)
+        val delay = if (pendingRequests.isNotEmpty()) WS_KEEPALIVE_BUSY_MS else WS_KEEPALIVE_IDLE_MS
+        pingFuture = reconnectExecutor.schedule({
+            val ws = wsClient
+            if (ws != null && ws.isOpen) {
+                try { ws.sendPing() } catch (_: Exception) { }
+                schedulePing() // 自重调，下次间隔根据当时忙闲重新决定
+            }
+        }, delay, TimeUnit.MILLISECONDS)
     }
 
     /**
@@ -392,13 +427,14 @@ class UnrealInstanceManager {
     /**
      * 通过一次性 WebSocket 连接向指定端口转发 tools/call，不改动长连接绑定。
      * 用于 AI 指定 targetPort 跨实例并发查询（DS/Client1/Client2 同时取）。
+     * 优先用最近一次扫描的 instances 缓存解析 wsPort，省冗余 HTTP 探测。
      */
     fun forwardToolCallToPort(
         port: Int,
         params: JSONObject,
         timeoutMs: Long = TOOLS_CALL_TIMEOUT_MS,
     ): WsRequestOutcome {
-        val info = probeStatus(port) ?: return WsRequestOutcome.disconnected()
+        val info = instances.find { it.port == port } ?: probeStatus(port) ?: return WsRequestOutcome.disconnected()
         val id = idCounter.getAndIncrement()
         val request = JSONObject().apply {
             put("jsonrpc", "2.0")
@@ -462,12 +498,27 @@ class UnrealInstanceManager {
             val conn = url.openConnection() as HttpURLConnection
             conn.apply {
                 requestMethod = "GET"
-                connectTimeout = 500
+                connectTimeout = 1000
                 readTimeout = 1000
             }
             if (conn.responseCode != 200) return null
 
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            // Content-Length 超限时快速跳过，避免无界读取
+            val contentLength = conn.contentLengthLong
+            if (contentLength > PROBE_MAX_BYTES) return null
+
+            val body = conn.inputStream.bufferedReader().use { reader ->
+                val sb = StringBuilder()
+                val buf = CharArray(4096)
+                var totalRead = 0
+                var n: Int
+                while (reader.read(buf).also { n = it } != -1) {
+                    totalRead += n
+                    if (totalRead > PROBE_MAX_BYTES) return null
+                    sb.append(buf, 0, n)
+                }
+                sb.toString()
+            }
             val json = JSONObject(body)
 
             val serverName = json.optString("server", "")

@@ -14,10 +14,13 @@ import io.netty.handler.codec.http.*
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
+import java.util.LinkedHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 /**
  * nexus-rider 独立 MCP HTTP 服务器（per-session 会话隔离）。
@@ -42,8 +45,19 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager) {
     /** 活跃的 SSE 客户端连接，用于推送 MCP 服务端通知。 */
     private val sseContexts = CopyOnWriteArrayList<ChannelHandlerContext>()
 
-    /** HTTP 通道的 per-session Dispatcher 表（按 Mcp-Session-Id 索引）。 */
-    val httpSessions = ConcurrentHashMap<String, NexusMcpDispatcher>()
+    /**
+     * HTTP 通道的 per-session Dispatcher 表（按 Mcp-Session-Id 索引）。
+     * 用 LinkedHashMap 保持插入序，超上限时可淘汰最旧会话；用 synchronizedMap 保证线程安全。
+     */
+    val httpSessions: MutableMap<String, NexusMcpDispatcher> =
+        Collections.synchronizedMap(object : LinkedHashMap<String, NexusMcpDispatcher>() {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, NexusMcpDispatcher>?): Boolean = false
+        })
+
+    companion object {
+        /** 活跃会话上限：超出时淘汰最旧的非当前会话（防循环重连导致内存增长）。 */
+        internal const val MAX_SESSIONS = 50
+    }
 
     var port: Int = 0
         private set
@@ -136,7 +150,7 @@ private const val MCP_SESSION_HEADER = "Mcp-Session-Id"
  *   OPTIONS /stream、OPTIONS /sse → CORS 预检
  */
 private class McpHttpHandler(
-    private val sessions: ConcurrentHashMap<String, NexusMcpDispatcher>,
+    private val sessions: MutableMap<String, NexusMcpDispatcher>,
     private val unrealManager: UnrealInstanceManager,
     private val executor: ExecutorService,
     private val sseContexts: CopyOnWriteArrayList<ChannelHandlerContext>,
@@ -165,7 +179,12 @@ private class McpHttpHandler(
         }
 
         val incomingSessionId = request.headers().get(MCP_SESSION_HEADER) ?: ""
-        val bIsInitialize = body.contains("\"initialize\"")
+        // 先尝试 JSON 解析取 method，避免工具参数含 "initialize" 子串时误判
+        val bIsInitialize = try {
+            org.json.JSONObject(body).optString("method") == "initialize"
+        } catch (_: Exception) {
+            body.contains("\"initialize\"")
+        }
 
         // 在独立线程执行 dispatch，防止 WS 转发的同步等待阻塞 Netty IO 线程
         executor.submit {
@@ -176,9 +195,18 @@ private class McpHttpHandler(
                 if (bIsInitialize) {
                     sessionId = UUID.randomUUID().toString()
                     dispatcher = NexusMcpDispatcher(unrealManager, onSessionReady)
-                    sessions[sessionId] = dispatcher
-                    // 清理已关闭的会话
-                    sessions.entries.removeIf { it.value.state == McpSessionState.WaitingForInitialize && it.key != sessionId }
+                    // synchronizedMap 的集合视图迭代须手动持锁，否则 cachedThreadPool 并发 initialize 下
+                    // removeIf / keys 遍历可能抛 ConcurrentModificationException。
+                    synchronized(sessions) {
+                        sessions[sessionId] = dispatcher
+                        // 清理仍处于 WaitingForInitialize 的陈旧会话
+                        sessions.entries.removeIf { it.value.state == McpSessionState.WaitingForInitialize && it.key != sessionId }
+                        // 超上限时按插入序淘汰最旧的非当前会话（防循环重连导致内存增长）
+                        if (sessions.size > NexusMcpServer.MAX_SESSIONS) {
+                            val oldest = sessions.keys.firstOrNull { it != sessionId }
+                            if (oldest != null) sessions.remove(oldest)
+                        }
+                    }
                     log.info("新建 MCP 会话: $sessionId（当前 ${sessions.size} 个活跃会话）")
                 } else if (incomingSessionId.isNotBlank() && sessions.containsKey(incomingSessionId)) {
                     sessionId = incomingSessionId
@@ -205,6 +233,7 @@ private class McpHttpHandler(
     /**
      * GET /sse — SSE 长连接。
      * 静默保持连接，仅用于服务端推送通知（如 notifications/tools/list_changed）。
+     * 每 SSE_KEEPALIVE_MS 写一行注释帧避免经反代/NAT idle 被断开。
      */
     private fun handleGet(ctx: ChannelHandlerContext) {
         val response = DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
@@ -218,7 +247,22 @@ private class McpHttpHandler(
         ctx.writeAndFlush(response)
 
         sseContexts.add(ctx)
-        ctx.channel().closeFuture().addListener(ChannelFutureListener { sseContexts.remove(ctx) })
+
+        // 周期心跳帧（复用 Netty channel event loop，避免额外线程）
+        val keepaliveFuture: ScheduledFuture<*> = ctx.channel().eventLoop().scheduleAtFixedRate({
+            if (!ctx.channel().isActive) return@scheduleAtFixedRate
+            val buf = Unpooled.copiedBuffer(": keepalive\n\n", StandardCharsets.UTF_8)
+            ctx.writeAndFlush(DefaultHttpContent(buf))
+        }, SSE_KEEPALIVE_MS, SSE_KEEPALIVE_MS, TimeUnit.MILLISECONDS)
+
+        ctx.channel().closeFuture().addListener(ChannelFutureListener {
+            keepaliveFuture.cancel(false)
+            sseContexts.remove(ctx)
+        })
+    }
+
+    companion object {
+        private const val SSE_KEEPALIVE_MS = 20_000L
     }
 
     private fun handleOptions(ctx: ChannelHandlerContext) {

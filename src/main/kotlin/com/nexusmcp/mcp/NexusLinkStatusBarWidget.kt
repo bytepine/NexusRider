@@ -136,6 +136,16 @@ class NexusLinkStatusBarWidget(private val project: Project) :
             }
         }
 
+        // 已连接时提供断开选项（与 VSCode 对齐）
+        if (manager.connectedPort > 0) {
+            items.add(PopupItem("⊘  断开连接") {
+                AppExecutorUtil.getAppExecutorService().submit {
+                    manager.disconnect()
+                    statusBar?.updateWidget(WIDGET_ID)
+                }
+            })
+        }
+
         // 末尾始终提供手动刷新，让用户不依赖 5 秒定时器
         items.add(PopupItem("⟳  刷新搜索") {
             AppExecutorUtil.getAppExecutorService().submit {
