@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-26
+
+- docs: `plugin.xml` `<description>` 双语顺序改为英文在前、中文在后，满足 JetBrains Marketplace 校验要求
+
 ## [1.4.0] - 2026-06-26
 
 - docs: `plugin.xml` `<description>` 调整为中文在前、英文在后，并补全中文段落（概览/能力/安装/快速开始/功能/隐私），与 NexusVSCode 商店描述双语顺序一致
