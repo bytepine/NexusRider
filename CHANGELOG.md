@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [1.3.7] - 2026-06-26
+
 - docs: README 移除手写「当前版本 / 插件 ID」行（版本以 CHANGELOG/Releases 为准）
 - docs: 优化 `plugin.xml` `<description>` 概览（英文为主 + 中文；补 NexusLink GitHub/Releases 链接、安装与启用步骤、绑定 127.0.0.1 无遥测声明）
 - chore: 新增插件图标 `META-INF/pluginIcon.svg` 与暗色 `pluginIcon_dark.svg`（40×40，六边形 + 连接枢纽，满足 Marketplace logo 规范）
@@ -15,7 +17,6 @@
 - chore(ci): 新增 tag 触发 Release workflow，CI 自动打包并发布 GitHub Release
 - docs: 新增英文 README（README.en.md）与中英文顶部语言切换
 - chore: `plugin.xml` vendor 修正为 byteyang；GitHub 仓库描述与 topics 已配置
-
 - fix(ci): gradlew 在 Linux runner 无执行权限导致 Actions 失败（`chmod +x` + workflow 兜底）
 
 ## [1.3.6] - 2026-06-24
