@@ -21,7 +21,7 @@ JetBrains Rider 端 MCP **代理**插件：在本地运行独立 MCP HTTP 服务
 
 | 组件 | 要求 |
 |------|------|
-| **nexus-rider** | ≥ 1.3.3（与 UE `proxy_config.minProxyVersion` 对齐） |
+| **nexus-rider** | 与 UE `proxy_config.minProxyVersion` 对齐，建议使用最新版 |
 | **NexusLink**（UE 插件） | 随 [NexusLink Releases](https://github.com/bytepine/NexusLink/releases) 发布的 `nexus-mcp-unreal-*.zip`；UE **4.26+** |
 | **JetBrains Rider** | 2025.3+（build `253`，兼容至 `263.*`） |
 | **JDK**（仅本地构建） | 21 |
