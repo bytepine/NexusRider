@@ -36,6 +36,10 @@ java {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+        // no-compatibility：接口默认方法只生成 JVM default，不为继承的 deprecated
+        // 默认方法（如 StatusBarWidget.getPresentation(PlatformType)）生成兼容桥接，
+        // 从而消除 Marketplace 验证器的 deprecated API 报告
+        freeCompilerArgs.add("-jvm-default=no-compatibility")
     }
 }
 
@@ -52,6 +56,27 @@ intellijPlatform {
     }
 
     buildSearchableOptions = false
+}
+
+// 将插件版本写入打包资源，供运行时读取（避免使用 @ApiStatus.Internal 的 PluginManager API）
+val generateVersionResource = tasks.register("generateVersionResource") {
+    val versionValue = providers.gradleProperty("pluginVersion")
+    val outputDir = layout.buildDirectory.dir("generated/versionResource")
+    inputs.property("version", versionValue)
+    outputs.dir(outputDir)
+    doLast {
+        val file = outputDir.get().file("nexus-mcp-version.txt").asFile
+        file.parentFile.mkdirs()
+        file.writeText(versionValue.get())
+    }
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDir(generateVersionResource)
+        }
+    }
 }
 
 tasks {

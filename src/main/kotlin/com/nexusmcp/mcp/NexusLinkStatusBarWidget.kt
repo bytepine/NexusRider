@@ -60,7 +60,6 @@ class NexusLinkStatusBarWidget(private val project: Project) :
 
     override fun ID() = WIDGET_ID
 
-    @Suppress("OVERRIDE_DEPRECATION")
     override fun getPresentation() = this
 
     override fun install(statusBar: StatusBar) {

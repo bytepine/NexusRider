@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-06-29
+
+- fix(api): 插件版本改为从 Gradle 注入的打包资源 `nexus-mcp-version.txt` 读取，彻底移除 `PluginManager`/`PluginManagerCore`（`@ApiStatus.Internal`）调用，消除 Marketplace 验证器「internal API usage」
+- fix(api): Kotlin 编译启用 `-jvm-default=no-compatibility`，不再为继承的 deprecated 接口默认方法生成兼容桥接，消除 `StatusBarWidget.getPresentation(PlatformType)` / `PlatformType` 等 3 处 deprecated API 报告；移除多余的 `@Suppress("OVERRIDE_DEPRECATION")`
+
 ## [1.4.2] - 2026-06-26
 
 - fix(api): `NexusMcpDispatcher` 版本读取改用公开 API `PluginManager.getPluginByClass()`，消除 `PluginManagerCore`（Internal API）警告

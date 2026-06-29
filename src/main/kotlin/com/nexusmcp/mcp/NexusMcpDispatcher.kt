@@ -2,7 +2,6 @@
 
 package com.nexusmcp.mcp
 
-import com.intellij.ide.plugins.PluginManager
 import com.intellij.openapi.diagnostic.logger
 import org.json.JSONArray
 import org.json.JSONObject
@@ -46,9 +45,16 @@ class NexusMcpDispatcher(
         private const val PROTOCOL_VERSION = "2025-06-18"
         private const val SERVER_NAME = "Nexus-Rider"
 
-        /** 运行时读取插件版本（打包后为真实版本号，IDE 开发时回退 "0.0.0"）。 */
+        /**
+         * 运行时读取插件版本：从打包资源 nexus-mcp-version.txt 读取（由 Gradle 注入），
+         * 不依赖任何 @ApiStatus.Internal 平台 API；IDE 开发态资源缺失时回退 "0.0.0"。
+         */
         private val SERVER_VERSION: String by lazy {
-            PluginManager.getPluginByClass(NexusMcpDispatcher::class.java)?.version ?: "0.0.0"
+            NexusMcpDispatcher::class.java.getResourceAsStream("/nexus-mcp-version.txt")
+                ?.bufferedReader(Charsets.UTF_8)
+                ?.use { it.readText().trim() }
+                ?.takeIf { it.isNotEmpty() }
+                ?: "0.0.0"
         }
 
         /** initialize 握手时 UE 预热的最大等待时间（超时先返回 prefix，后台继续）。 */
