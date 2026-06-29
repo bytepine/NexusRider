@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Chore
+
+- chore(release): 支持 Pre-release 发版流程——版本号 `X.Y.Z-beta.N` 触发 GitHub pre-release；`extract_release_notes.py` 支持 pre-release 版本校验
+
 ## [1.4.3] - 2026-06-29
 
 - fix(api): 插件版本改为从 Gradle 注入的打包资源 `nexus-mcp-version.txt` 读取，彻底移除 `PluginManager`/`PluginManagerCore`（`@ApiStatus.Internal`）调用，消除 Marketplace 验证器「internal API usage」
