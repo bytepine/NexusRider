@@ -11,6 +11,8 @@ JetBrains Rider 端 MCP **代理**插件：在本地运行独立 MCP HTTP 服务
 | 接入方式 | 端点 | 适用 |
 |----------|------|------|
 | **Rider 代理**（本插件） | `http://127.0.0.1:6800/stream` | JetBrains Rider 用户；自动发现/切换多 UE 实例 |
+| VSCode 代理 | `http://127.0.0.1:6900/stream` | VSCode / Cursor / CodeBuddy 用户（见 [NexusVSCode](https://github.com/bytepine/NexusVSCode)） |
+| NexusDesktop 独立程序 | `http://127.0.0.1:6700/stream` | **无需 IDE 插件**；双击 .exe/.app 常驻托盘即可（见 [NexusDesktop](https://github.com/bytepine/NexusDesktop)） |
 | 直连 UE | `http://127.0.0.1:45000/stream` | 无需 IDE 插件；须自行指定 UE 端口 |
 
 代理模式的价值：AI 客户端只连固定端口，由 Rider 负责扫描 `45000`–`45100`、维持 WebSocket 长连接、在多 Editor / PIE 实例间切换。
