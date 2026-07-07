@@ -60,9 +60,11 @@ class UnrealInstanceManager {
      */
     fun ensureLongConnection(): Boolean {
         if (isWsOpen()) return true // 快路径：免锁，绝大多数 tools/call 命中此处
+        if (manuallyDisconnected) return false
 
         synchronized(connectionLock) {
             if (isWsOpen()) return true // 双检：可能已被并发线程重连
+            if (manuallyDisconnected) return false
 
             val reconnectPort = when {
                 connectedPort > 0 -> connectedPort
@@ -136,6 +138,11 @@ class UnrealInstanceManager {
      * 断连后自动重连优先连此端口，避免覆盖用户选择。
      */
     @Volatile var preferredPort: Int = -1
+
+    /**
+     * 用户主动断开标志：为 true 时抑制自动重连，直到用户主动连接某实例后清除。
+     */
+    @Volatile private var manuallyDisconnected: Boolean = false
 
     /** 当前活跃的 WebSocket 连接（多线程访问，需 @Volatile 保证可见性）。 */
     @Volatile private var wsClient: WebSocketClient? = null
@@ -211,7 +218,8 @@ class UnrealInstanceManager {
             resetWsConnection(clearPreferred = false)
         }
 
-        if (connectedPort < 0 && found.isNotEmpty()) {
+        // 用户手动断开后不自动重连，直到用户主动选择实例
+        if (connectedPort < 0 && found.isNotEmpty() && !manuallyDisconnected) {
             // 优先连用户手动指定的端口，其次连 Editor，最后取第一个
             val target = when {
                 preferredPort > 0 && found.any { it.port == preferredPort } ->
@@ -250,7 +258,10 @@ class UnrealInstanceManager {
      * 通过 WebSocket 连接到指定端口的 UE 实例。
      */
     fun connectTo(port: Int, setPreferred: Boolean = false): Boolean = synchronized(connectionLock) {
-        if (setPreferred) preferredPort = port
+        if (setPreferred) {
+            preferredPort = port
+            manuallyDisconnected = false // 用户主动选择，恢复自动重连
+        }
         // 已连到同端口且 WS 存活：直接复用，避免 reset→重建造成连接抖动
         if (connectedPort == port && isWsOpen()) return true
         val info = probeStatus(port) ?: return false
@@ -330,6 +341,7 @@ class UnrealInstanceManager {
     }
 
     fun disconnect() {
+        manuallyDisconnected = true
         resetWsConnection(clearPreferred = true)
     }
 
