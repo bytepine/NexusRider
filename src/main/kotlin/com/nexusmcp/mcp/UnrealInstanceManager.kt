@@ -54,6 +54,67 @@ class UnrealInstanceManager {
     /** WebSocket 是否仍为 OPEN 状态（供上层判定 connected 字段真实性）。 */
     fun isWsOpen(): Boolean = wsClient?.isOpen == true
 
+    /** 代理层转发失败（断连/超时/连接失败）的进程内缓冲，供 nexus/proxy_feedback 上报给 UE。 */
+    val proxyFeedbackBuffer = ProxyFeedbackBuffer()
+
+    /** flushProxyFeedback 并发保护：避免同一批事件被重复发送。 */
+    private val proxyFeedbackFlushing = AtomicInteger(0)
+
+    /** 后台单线程执行 flush，避免阻塞调用方（handleToolsCall 等）响应 AI。 */
+    private val proxyFeedbackExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "nexus-proxy-feedback-flush").apply { isDaemon = true }
+    }
+
+    /**
+     * 异步、fire-and-forget 地尝试上报缓冲中的代理层失败事件，不阻塞、不影响对 AI 的原始错误。
+     * 旧版 NexusLink 未实现 `nexus/proxy_feedback` 时静默降级：标记 unsupported 后不再重试。
+     * flush 自身失败（仍未连接/超时）时把事件放回队首，等待下次连上再试，不上抛任何异常。
+     */
+    fun flushProxyFeedback() {
+        if (proxyFeedbackBuffer.isUnsupported) return
+        if (!proxyFeedbackBuffer.hasPending()) return
+        if (!proxyFeedbackFlushing.compareAndSet(0, 1)) return
+
+        proxyFeedbackExecutor.submit {
+            try {
+                for (event in proxyFeedbackBuffer.drain()) {
+                    if (proxyFeedbackBuffer.isUnsupported) break
+                    try {
+                        val outcome = sendProxyFeedbackEvent(event)
+                        if (outcome.status != WsRequestStatus.OK) {
+                            // 反馈通道自身断连/超时：放回队首，下次连上再试，不级联报错。
+                            proxyFeedbackBuffer.requeue(event)
+                            break
+                        }
+                        if (isMethodNotFoundError(outcome.response)) {
+                            proxyFeedbackBuffer.markUnsupported()
+                            log.debug("UE 不支持 nexus/proxy_feedback（旧版 NexusLink），已跳过后续上报")
+                            break
+                        }
+                    } catch (_: Exception) {
+                        // 任何异常均静默吞掉，绝不影响主路径。
+                        proxyFeedbackBuffer.requeue(event)
+                        break
+                    }
+                }
+            } finally {
+                proxyFeedbackFlushing.set(0)
+            }
+        }
+    }
+
+    /** 发送单条 nexus/proxy_feedback 请求，短超时避免拖慢正常连接流程。 */
+    private fun sendProxyFeedbackEvent(event: ProxyFeedbackEvent): WsRequestOutcome {
+        val params = JSONObject().apply {
+            put("category", event.category.wireValue)
+            event.tool?.let { put("tool", it) }
+            event.errorText?.let { put("errorText", it) }
+            event.note?.let { put("note", it) }
+            put("proxy", "rider")
+        }
+        return sendWsRequest("nexus/proxy_feedback", params, timeoutMs = 3000)
+    }
+
     /**
      * 转发 tools/call 前确保长连接可用：已 OPEN 则直接成功；
      * 否则按 connectedPort / preferredPort 重建，或 discoverInstances 自动连 Editor。

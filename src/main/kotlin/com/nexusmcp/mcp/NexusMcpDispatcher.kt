@@ -273,15 +273,28 @@ class NexusMcpDispatcher(
             }
         }
         when (outcome.status) {
-            WsRequestStatus.DISCONNECTED ->
-                return makeError(id, INTERNAL_ERROR, proxyConfig.errorMessages.notConnected)
+            WsRequestStatus.DISCONNECTED -> {
+                unrealManager.proxyFeedbackBuffer.enqueue(
+                    ProxyFeedbackEvent(
+                        category = ProxyFeedbackCategory.DISCONNECT,
+                        tool = toolName,
+                        errorText = proxyConfig.errorMessages.notConnected,
+                    )
+                )
+                unrealManager.flushProxyFeedback()
+                return makeError(
+                    id, INTERNAL_ERROR, proxyConfig.errorMessages.notConnected,
+                    mapOf("errorKind" to "proxy_not_connected"),
+                )
+            }
             WsRequestStatus.TIMEOUT -> {
                 val sec = UnrealInstanceManager.TOOLS_CALL_TIMEOUT_MS / 1000
-                return makeError(
-                    id,
-                    INTERNAL_ERROR,
-                    "UE request timed out after ${sec}s. ${proxyConfig.errorMessages.timeoutHint}",
+                val message = "UE request timed out after ${sec}s. ${proxyConfig.errorMessages.timeoutHint}"
+                unrealManager.proxyFeedbackBuffer.enqueue(
+                    ProxyFeedbackEvent(category = ProxyFeedbackCategory.TIMEOUT, tool = toolName, errorText = message)
                 )
+                unrealManager.flushProxyFeedback()
+                return makeError(id, INTERNAL_ERROR, message, mapOf("errorKind" to "proxy_timeout"))
             }
             WsRequestStatus.OK -> { /* continue */ }
         }
@@ -335,6 +348,15 @@ class NexusMcpDispatcher(
             // refresh task 跑到时 wasWsOpen 已为 true，无法再检测新连接事件，须在此主动触发。
             try { unrealManager.fetchToolsList() } catch (_: Exception) { }
             onSessionReady?.invoke()
+            // 连上后尝试补发断连期间积压的代理层失败事件。
+            unrealManager.flushProxyFeedback()
+        } else {
+            unrealManager.proxyFeedbackBuffer.enqueue(
+                ProxyFeedbackEvent(
+                    category = ProxyFeedbackCategory.CONNECT_FAIL,
+                    errorText = "连接失败：端口 $port 无响应",
+                )
+            )
         }
         val msg = if (success) "已连接到 UE 实例 (端口 $port)" else "连接失败：端口 $port 无响应"
         val content = JSONArray().put(JSONObject().apply {
@@ -357,13 +379,14 @@ class NexusMcpDispatcher(
         }.toString()
     }
 
-    private fun makeError(id: Any?, code: Int, message: String): String {
+    private fun makeError(id: Any?, code: Int, message: String, data: Map<String, Any>? = null): String {
         return JSONObject().apply {
             put("jsonrpc", "2.0")
             if (id != null) put("id", id) else put("id", JSONObject.NULL)
             put("error", JSONObject().apply {
                 put("code", code)
                 put("message", message)
+                if (data != null) put("data", JSONObject(data))
             })
         }.toString()
     }
