@@ -156,11 +156,9 @@ class NexusMcpDispatcher(
         warmupExecutor.shutdown()
 
         val activeConfig = unrealManager.getProxyConfig()
-        val connectedNote = if (unrealManager.isWsOpen()) {
-            "(Connected via Rider plugin.)"
-        } else {
-            "(UE not connected — call list_unreal_instances + connect_unreal_instance when needed.)"
-        }
+        // 连接状态文案固定，避免随 WS 通断打穿 Prompt Cache（ephemeral）。
+        val connectedNote =
+            "(Via Rider plugin. Connection: trust tools/list — UE tools present ⇒ connected; else list_unreal_instances + connect_unreal_instance.)"
         val prefix = "${activeConfig.initializePrefix}\n$connectedNote"
         val instructionsText = if (upstream.isNotEmpty()) {
             "$prefix\n\n--- Upstream (Unreal) ---\n$upstream"
