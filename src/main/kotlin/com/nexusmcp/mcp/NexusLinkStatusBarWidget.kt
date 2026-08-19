@@ -73,10 +73,16 @@ class NexusLinkStatusBarWidget(private val project: Project) :
     override fun getText(): String {
         val manager = project.getUserData(NexusLinkStartupActivity.MANAGER_KEY)
             ?: return "⬡ Nexus"
+        val act = manager.sessionHub.getActivity()
+        if (act?.paused == true) return "⏸ Nexus 已暂停"
         return if (manager.connectedPort > 0) {
             val info = manager.instances.find { it.port == manager.connectedPort }
             val name = info?.projectName?.takeIf { it.isNotEmpty() } ?: "${manager.connectedPort}"
-            "⬢ $name"
+            val suffix = act?.capability?.takeIf { it.isNotEmpty() }?.let { cap ->
+                val id = act.identity.takeIf { it.isNotEmpty() }?.let { " " + it.take(24) } ?: ""
+                " · $cap$id"
+            } ?: ""
+            "⬢ $name$suffix"
         } else {
             val count = manager.instances.size
             if (count > 0) "⬡ Nexus ($count)" else "⬡ Nexus"
@@ -101,7 +107,13 @@ class NexusLinkStatusBarWidget(private val project: Project) :
         } else {
             "UE：未连接"
         }
-        return "$serverLine\n$ueLine\n点击管理 UE 实例"
+        val pauseLine = if (manager.sessionHub.isPaused()) "Agent 转发：已暂停" else null
+        val act = manager.sessionHub.getActivity()
+        val actLine = if (act != null && !act.paused && act.capability.isNotEmpty()) {
+            if (act.identity.isNotEmpty()) "最近调用：${act.capability} → ${act.identity}"
+            else "最近调用：${act.capability}"
+        } else null
+        return listOfNotNull(serverLine, ueLine, pauseLine, actLine, "点击管理 UE 实例").joinToString("\n")
     }
 
     override fun getAlignment() = 0f
@@ -142,6 +154,18 @@ class NexusLinkStatusBarWidget(private val project: Project) :
                     manager.disconnect()
                     statusBar?.updateWidget(WIDGET_ID)
                 }
+            })
+        }
+
+        if (manager.sessionHub.isPaused()) {
+            items.add(PopupItem("▶  恢复 Agent 转发") {
+                manager.sessionHub.setPaused(false)
+                statusBar?.updateWidget(WIDGET_ID)
+            })
+        } else {
+            items.add(PopupItem("⏸  暂停 Agent 转发") {
+                manager.sessionHub.setPaused(true)
+                statusBar?.updateWidget(WIDGET_ID)
             })
         }
 

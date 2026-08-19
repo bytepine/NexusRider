@@ -46,6 +46,7 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 | MCP port | `6800` | AI client port; **restart Rider after changing** |
 | Scan port range | `45000`–`45100` | UE discovery; toggle the master switch after changing |
 | Scan interval | `5` s | Periodic discovery |
+| Write gate | `destructive` | `off` / `destructive` (delete, rename, stop PIE) / `all` |
 
 The panel has **Streamable HTTP** / **SSE** buttons that generate copy-paste JSON for AI clients.
 
@@ -56,7 +57,7 @@ The panel has **Streamable HTTP** / **SSE** buttons that generate copy-paste JSO
 | **⬢ project name** | Connected to UE |
 | **⬡ Nexus** | Not connected |
 
-Click to switch instances. A single instance auto-connects; multiple instances prefer `netRole=Editor`. Tool-list cache is kept across disconnects.
+Click to switch instances. A single instance auto-connects; multiple instances prefer `netRole=Editor`. Tool-list cache is kept across disconnects. The popup can pause/resume agent forwarding. Session contract: [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md).
 
 ---
 

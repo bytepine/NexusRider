@@ -10,6 +10,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.bindIntText
+import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.concurrency.AppExecutorUtil
@@ -56,6 +57,10 @@ class NexusLinkConfigurable : Configurable {
         val prevEnabled = NexusLinkSettings.instance.state.enabled
         dialogPanel?.apply()
         val nowEnabled = NexusLinkSettings.instance.state.enabled
+        val gate = ProxySessionPolicy.parseWriteGate(NexusLinkSettings.instance.state.writeGate)
+        ProjectManager.getInstance().openProjects.forEach { project ->
+            project.getUserData(NexusLinkStartupActivity.MANAGER_KEY)?.sessionHub?.writeGate = gate
+        }
 
         if (prevEnabled != nowEnabled) {
             val projects = ProjectManager.getInstance().openProjects
@@ -114,6 +119,17 @@ class NexusLinkConfigurable : Configurable {
                         .bindIntText(state::scanIntervalSeconds)
                     label("秒")
                     comment("修改后重启 MCP 服务器生效")
+                }
+            }
+
+            group("写操作门控") {
+                row("门控级别:") {
+                    comboBox(listOf("off", "destructive", "all"))
+                        .bindItem(
+                            { state.writeGate },
+                            { v -> state.writeGate = v ?: "destructive" },
+                        )
+                    comment("off 不确认；destructive（默认）删除/重命名/停 PIE；all 所有写操作。")
                 }
             }
 

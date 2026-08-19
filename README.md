@@ -46,6 +46,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | MCP 端口 | `6800` | AI 客户端连接端口；**修改后需重启 Rider** |
 | 扫描端口范围 | `45000`–`45100` | UE 发现范围；改后关开总开关即可 |
 | 扫描间隔 | `5` 秒 | 定时发现间隔 |
+| 写操作门控 | `destructive` | `off` / `destructive`（删除、重命名、停 PIE）/ `all` |
 
 设置面板提供「Streamable HTTP 配置」「SSE 配置」按钮，生成可复制的 AI 客户端 JSON。
 
@@ -56,7 +57,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | **⬢ 项目名** | 已连接 UE |
 | **⬡ Nexus** | 未连接 |
 
-点击状态栏切换实例。唯一实例自动连接；多实例优先 `netRole=Editor`。断线保留工具列表缓存，重连后刷新。
+点击状态栏切换实例。唯一实例自动连接；多实例优先 `netRole=Editor`。断线保留工具列表缓存，重连后刷新。弹单可暂停/恢复 Agent 转发。会话层契约见 [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md)。
 
 ---
 

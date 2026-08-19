@@ -29,6 +29,8 @@ class NexusLinkSettings : PersistentStateComponent<NexusLinkSettings.State> {
         var scanPortEnd: Int = 45100,
         /** UE 实例发现定时扫描间隔（秒）。 */
         var scanIntervalSeconds: Int = 5,
+        /** 写门控：off / destructive / all。 */
+        var writeGate: String = "destructive",
     )
 
     private var state = State()

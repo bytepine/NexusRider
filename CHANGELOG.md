@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- feat(mcp): 代理会话层——TTL/section 读缓存、断线 `degraded` 快照、写门控（设置「写操作门控」）、状态栏暂停/恢复 Agent 转发与最近调用显示；超大响应落盘临时目录
+
 ### Changed
 
 - perf(mcp): `handleInitialize` 的连接状态文案改为固定句（以 tools/list 为准），避免随 WS 通断打穿 `cache_control: ephemeral`

@@ -65,6 +65,9 @@ class UnrealInstanceManager {
         Thread(r, "nexus-proxy-feedback-flush").apply { isDaemon = true }
     }
 
+    /** 项目级会话枢纽：TTL 缓存 / Pause / 写门控 / 驾驶舱活动。 */
+    val sessionHub = ProxySessionHub()
+
     /**
      * 异步、fire-and-forget 地尝试上报缓冲中的代理层失败事件，不阻塞、不影响对 AI 的原始错误。
      * 旧版 NexusLink 未实现 `nexus/proxy_feedback` 时静默降级：标记 unsupported 后不再重试。

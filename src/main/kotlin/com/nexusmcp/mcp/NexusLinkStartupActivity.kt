@@ -6,9 +6,11 @@ import com.intellij.notification.Notification
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.notification.Notifications
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import java.util.concurrent.TimeUnit
@@ -55,6 +57,29 @@ class NexusLinkStartupActivity : ProjectActivity {
                 it.scanPortStart = settings.scanPortStart
                 it.scanPortEnd   = settings.scanPortEnd
                 project.putUserData(MANAGER_KEY, it)
+            }
+
+            manager.sessionHub.writeGate = ProxySessionPolicy.parseWriteGate(settings.writeGate)
+            manager.sessionHub.onActivity = { refreshStatusBar(project) }
+            manager.sessionHub.gatePrompter = { info ->
+                var decision = GateDecision.DENY
+                ApplicationManager.getApplication().invokeAndWait {
+                    val target = if (info.identity.isNotEmpty()) " → ${info.identity}" else ""
+                    val r = Messages.showDialog(
+                        project,
+                        "Agent 请求 ${info.capability}$target",
+                        "Nexus MCP",
+                        arrayOf("允许", "拒绝", "本会话总是允许"),
+                        0,
+                        Messages.getWarningIcon(),
+                    )
+                    decision = when (r) {
+                        0 -> GateDecision.ALLOW
+                        2 -> GateDecision.ALWAYS
+                        else -> GateDecision.DENY
+                    }
+                }
+                decision
             }
 
             // UE 端工具列表变更时，清缓存后通知所有 SSE 客户端刷新

@@ -246,6 +246,38 @@ class NexusMcpDispatcher(
             }
         }
 
+        val args = params.optJSONObject("arguments")
+        val callInfo = ProxySessionPolicy.parseCall(toolName, args)
+        val hub = unrealManager.sessionHub
+        hub.waitIfPaused()
+        val gate = hub.confirmIfNeeded(callInfo)
+        if (gate == GateDecision.DENY) {
+            return makeError(
+                id, INTERNAL_ERROR, "Write blocked by proxy gate (user denied).",
+                mapOf("errorKind" to "proxy_denied"),
+            )
+        }
+        hub.beginCall(callInfo)
+        try {
+            return forwardRemoteCall(id, params, toolName, proxyConfig, callInfo)
+        } finally {
+            hub.endCall()
+        }
+    }
+
+    private fun forwardRemoteCall(
+        id: Any?,
+        params: JSONObject,
+        toolName: String,
+        proxyConfig: ProxyConfig,
+        callInfo: CallInfo,
+    ): String {
+        val hub = unrealManager.sessionHub
+        val now = System.currentTimeMillis()
+        hub.lookupFresh(callInfo, now)?.let { hit ->
+            return makeResult(id, ProxySessionHub.wrapCached(hit.result, hit.kind, hit.snapshotAt))
+        }
+
         // 可选 targetPort：一次性路由到指定实例，不改动长连接绑定
         var targetPort = -1
         val forwardParams = JSONObject(params.toString())
@@ -272,6 +304,9 @@ class NexusMcpDispatcher(
         }
         when (outcome.status) {
             WsRequestStatus.DISCONNECTED -> {
+                hub.lookupDegraded(callInfo, now)?.let { snap ->
+                    return makeResult(id, ProxySessionHub.wrapDegraded(snap.result, snap.snapshotAt))
+                }
                 unrealManager.proxyFeedbackBuffer.enqueue(
                     ProxyFeedbackEvent(
                         category = ProxyFeedbackCategory.DISCONNECT,
@@ -299,7 +334,9 @@ class NexusMcpDispatcher(
         val response = outcome.response
             ?: return makeError(id, INTERNAL_ERROR, "Invalid response from UE instance")
         return if (response.has("result")) {
-            makeResult(id, response.getJSONObject("result"))
+            val raw = response.optJSONObject("result")
+                ?: return makeError(id, INTERNAL_ERROR, "Invalid response from UE instance")
+            makeResult(id, hub.store(callInfo, raw, now))
         } else if (response.has("error")) {
             val err = response.getJSONObject("error")
             makeError(id, err.optInt("code", INTERNAL_ERROR), err.optString("message", "Unknown error"))
