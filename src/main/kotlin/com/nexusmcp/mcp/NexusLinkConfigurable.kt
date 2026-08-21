@@ -12,6 +12,7 @@ import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.bindIntText
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
+import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.concurrency.AppExecutorUtil
 import java.awt.Font
@@ -64,12 +65,15 @@ class NexusLinkConfigurable : Configurable {
         val prevScanStart = state.scanPortStart
         val prevScanEnd = state.scanPortEnd
         val prevInterval = state.scanIntervalSeconds
+        val prevListenLan = state.listenLan
+        val prevRemote = state.remoteUnrealText
         dialogPanel?.apply()
         val nowEnabled = state.enabled
-        val portChanged = prevPort != state.mcpPort
+        val portChanged = prevPort != state.mcpPort || prevListenLan != state.listenLan
         val scanChanged = prevScanStart != state.scanPortStart
             || prevScanEnd != state.scanPortEnd
             || prevInterval != state.scanIntervalSeconds
+            || prevRemote != state.remoteUnrealText
         val gate = ProxySessionPolicy.parseWriteGate(state.writeGate)
         val projects = ProjectManager.getInstance().openProjects
         projects.forEach { project ->
@@ -107,7 +111,9 @@ class NexusLinkConfigurable : Configurable {
             row {
                 checkBox("启用 Nexus MCP 服务器")
                     .bindSelected(state::enabled)
-                    .comment("开启后立即启动 MCP 代理服务器，关闭后立即停止。")
+                checkBox("允许局域网接入")
+                    .bindSelected(state::listenLan)
+                    .comment("默认关（仅 127.0.0.1）。勾选后 MCP 绑 0.0.0.0，远程 AI 可用本机网卡 IP + Bearer 连接。勿映射到公网。")
             }
 
             // ── 服务器端口 ──────────────────────────────────────────
@@ -137,6 +143,12 @@ class NexusLinkConfigurable : Configurable {
                     label("秒")
                     comment("修改后保存即生效")
                 }
+                row("远程 UE:") {
+                    textArea()
+                        .bindText(state::remoteUnrealText)
+                        .align(AlignX.FILL)
+                    comment("每行 host:mcpPort token（从 UE 设置面板复制 token）。不扫网段。")
+                }
             }
 
             group("写操作门控") {
@@ -161,12 +173,12 @@ class NexusLinkConfigurable : Configurable {
                 row {
                     button("Streamable HTTP 配置") {
                         val port = mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort
-                        configPreview.text = buildStreamConfig(port)
+                        configPreview.text = buildStreamConfig(port, LanHost.mcpDisplayHost(state.listenLan))
                         configPreview.caretPosition = 0
                     }
                     button("SSE 配置") {
                         val port = mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort
-                        configPreview.text = buildSseConfig(port)
+                        configPreview.text = buildSseConfig(port, LanHost.mcpDisplayHost(state.listenLan))
                         configPreview.caretPosition = 0
                     }.align(AlignX.LEFT)
                     // 一键复制当前预览内容（与 VSCode copyMcpConfig 对齐；占位文本时静默 no-op）
@@ -185,11 +197,11 @@ class NexusLinkConfigurable : Configurable {
     }
 
     /** 生成 Streamable HTTP（/stream）配置片段。 */
-    private fun buildStreamConfig(port: Int): String = """
+    private fun buildStreamConfig(port: Int, host: String = LanHost.LOOPBACK): String = """
 # ── CodeBuddy / Windsurf ──────────────────────────────────
 # 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
 "Nexus": {
-  "url": "http://127.0.0.1:$port/stream",
+  "url": "http://$host:$port/stream",
   "transportType": "streamable-http",
   "description": "NexusLink MCP Server for Unreal Engine",
   "disabled": false,
@@ -201,7 +213,7 @@ class NexusLinkConfigurable : Configurable {
 # ── Cursor ────────────────────────────────────────────────
 # 配置路径：~/.cursor/mcp.json → mcpServers 节点下
 "nexus-unreal": {
-  "url": "http://127.0.0.1:$port/stream",
+  "url": "http://$host:$port/stream",
   "headers": {
     "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
   }
@@ -209,11 +221,11 @@ class NexusLinkConfigurable : Configurable {
     """.trimIndent()
 
     /** 生成 SSE（/sse）配置片段。 */
-    private fun buildSseConfig(port: Int): String = """
+    private fun buildSseConfig(port: Int, host: String = LanHost.LOOPBACK): String = """
 # ── CodeBuddy / Windsurf ──────────────────────────────────
 # 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
 "Nexus": {
-  "url": "http://127.0.0.1:$port/sse",
+  "url": "http://$host:$port/sse",
   "disabled": false,
   "headers": {
     "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
@@ -223,7 +235,7 @@ class NexusLinkConfigurable : Configurable {
 # ── Cursor ────────────────────────────────────────────────
 # 配置路径：~/.cursor/mcp.json → mcpServers 节点下
 "nexus-unreal": {
-  "url": "http://127.0.0.1:$port/sse",
+  "url": "http://$host:$port/sse",
   "headers": {
     "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
   }

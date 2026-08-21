@@ -33,6 +33,10 @@ class NexusLinkSettings : PersistentStateComponent<NexusLinkSettings.State> {
         var writeGate: String = "destructive",
         /** Agent → 代理 Bearer token。 */
         var proxyToken: String = "",
+        /** MCP HTTP 绑 0.0.0.0，允许局域网 AI 客户端。 */
+        var listenLan: Boolean = false,
+        /** 远程 UE：每行 host:mcpPort token。 */
+        var remoteUnrealText: String = "",
     )
 
     private var state = State()

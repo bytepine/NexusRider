@@ -59,8 +59,10 @@ class NexusLinkStartupActivity : ProjectActivity {
             val manager = project.getUserData(MANAGER_KEY) ?: UnrealInstanceManager().also {
                 it.scanPortStart = settings.scanPortStart
                 it.scanPortEnd   = settings.scanPortEnd
+                it.remoteUnreal  = LanHost.parseRemoteText(settings.remoteUnrealText)
                 project.putUserData(MANAGER_KEY, it)
             }
+            manager.remoteUnreal = LanHost.parseRemoteText(settings.remoteUnrealText)
 
             manager.sessionHub.writeGate = ProxySessionPolicy.parseWriteGate(settings.writeGate)
             manager.sessionHub.onActivity = { refreshStatusBar(project) }
@@ -91,7 +93,8 @@ class NexusLinkStartupActivity : ProjectActivity {
             }
 
             val server = NexusMcpServer(manager, settings.proxyToken)
-            val port   = findAvailablePort(settings.mcpPort)
+            val bind = if (settings.listenLan) "0.0.0.0" else LanHost.LOOPBACK
+            val port   = findAvailablePort(settings.mcpPort, bindHost = bind)
 
             // 检测 MCP 端口与 UE 扫描区间重叠，误配时 AI 会把代理自身当 UE 实例扫到
             val scanMin = minOf(settings.scanPortStart, settings.scanPortEnd)
@@ -108,19 +111,20 @@ class NexusLinkStartupActivity : ProjectActivity {
                 return
             }
 
-            if (!server.start(port)) {
+            if (!server.start(port, bind)) {
                 log.error("MCP 服务器启动失败（端口 $port）")
                 notifyError(project, "Nexus MCP 服务器启动失败（端口 $port），请检查端口占用或查看 idea.log")
                 return
             }
 
+            val displayHost = LanHost.mcpDisplayHost(settings.listenLan)
             project.putUserData(MCP_SERVER_KEY, server)
-            log.info("Nexus MCP 已启动：stream=http://127.0.0.1:$port/stream  sse=http://127.0.0.1:$port/sse")
+            log.info("Nexus MCP 已启动：stream=http://$displayHost:$port/stream bind=$bind")
 
             val msg = if (port != settings.mcpPort)
-                "MCP 服务器已启动（端口 ${settings.mcpPort} 被占用，实际端口：<b>$port</b>）<br/>请将 AI 客户端地址更新为：<code>http://127.0.0.1:$port/stream</code>（Streamable HTTP）"
+                "MCP 服务器已启动（端口 ${settings.mcpPort} 被占用，实际端口：<b>$port</b>）<br/>请将 AI 客户端地址更新为：<code>http://$displayHost:$port/stream</code>"
             else
-                "MCP 服务器已就绪：<code>http://127.0.0.1:$port/stream</code>（Streamable HTTP）| <code>http://127.0.0.1:$port/sse</code>（SSE）"
+                "MCP 服务器已就绪：<code>http://$displayHost:$port/stream</code>"
             notifyInfo(project, msg)
 
             // 启动 UE 实例发现定时任务
@@ -134,6 +138,7 @@ class NexusLinkStartupActivity : ProjectActivity {
             val manager = project.getUserData(MANAGER_KEY) ?: return
             manager.scanPortStart = settings.scanPortStart
             manager.scanPortEnd = settings.scanPortEnd
+            manager.remoteUnreal = LanHost.parseRemoteText(settings.remoteUnrealText)
             val scanMin = minOf(settings.scanPortStart, settings.scanPortEnd)
             val scanMax = maxOf(settings.scanPortStart, settings.scanPortEnd)
             if (settings.mcpPort in scanMin..scanMax) {
@@ -200,12 +205,12 @@ class NexusLinkStartupActivity : ProjectActivity {
                 ?.updateWidget(NexusLinkStatusBarWidget.WIDGET_ID)
         }
 
-        fun findAvailablePort(startPort: Int, maxAttempts: Int = 100): Int {
+        fun findAvailablePort(startPort: Int, maxAttempts: Int = 100, bindHost: String = LanHost.LOOPBACK): Int {
             for (i in 0 until maxAttempts) {
                 val port = startPort + i
                 if (port > 65535) break
                 try {
-                    java.net.ServerSocket(port, 1, java.net.InetAddress.getByName("127.0.0.1")).use { return port }
+                    java.net.ServerSocket(port, 1, java.net.InetAddress.getByName(bindHost)).use { return port }
                 } catch (_: Exception) { }
             }
             return -1

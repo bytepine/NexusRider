@@ -47,6 +47,10 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | 扫描端口范围 | `45000`–`45100` | UE 发现范围；保存后立即生效 |
 | 扫描间隔 | `5` 秒 | 定时发现间隔；保存后立即生效 |
 | 写操作门控 | `destructive` | `off` / `destructive`（删除、重命名、停 PIE）/ `all` |
+| 允许局域网接入 | 关 | MCP 绑 `0.0.0.0`；复制配置时填本机网卡 IP |
+| 远程 UE | （空） | 每行 `host:mcpPort token`，不扫网段 |
+
+跨机见 [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
 
 设置面板提供「Streamable HTTP 配置」「SSE 配置」按钮，生成可复制的 AI 客户端 JSON。
 

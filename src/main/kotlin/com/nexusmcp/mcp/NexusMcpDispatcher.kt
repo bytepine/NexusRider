@@ -280,6 +280,7 @@ class NexusMcpDispatcher(
 
         // 可选 targetPort：一次性路由到指定实例，不改动长连接绑定
         var targetPort = -1
+        var targetHost = LanHost.LOOPBACK
         val forwardParams = JSONObject(params.toString())
         val args = forwardParams.optJSONObject("arguments")
         if (args != null && args.has("targetPort")) {
@@ -287,12 +288,16 @@ class NexusMcpDispatcher(
             if (tp >= 1024) {
                 targetPort = tp
                 args.remove("targetPort")
+                if (args.has("targetHost")) {
+                    targetHost = args.optString("targetHost", LanHost.LOOPBACK)
+                    args.remove("targetHost")
+                }
             }
         }
 
         // 远端工具转发：默认长连接；仅显式 targetPort 走一次性 WS。
         var outcome = if (targetPort > 0) {
-            unrealManager.forwardToolCallToPort(targetPort, forwardParams)
+            unrealManager.forwardToolCallToPort(targetPort, forwardParams, host = targetHost)
         } else {
             unrealManager.ensureLongConnection()
             var first = unrealManager.forwardToolCall(forwardParams)
@@ -355,10 +360,11 @@ class NexusMcpDispatcher(
         val arr = JSONArray()
         instances.forEach { info ->
             arr.put(JSONObject().apply {
+                put("host", info.host)
                 put("port", info.port)
                 put("projectName", info.projectName)
                 put("engineVersion", info.engineVersion)
-                put("connected", info.port == unrealManager.connectedPort && wsOpen)
+                put("connected", unrealManager.isConnectedInfo(info) && wsOpen)
                 if (info.netRole.isNotEmpty()) put("netRole", info.netRole)
             })
         }
@@ -374,10 +380,11 @@ class NexusMcpDispatcher(
 
     private fun executeConnect(id: Any?, params: JSONObject?): String {
         val port = params?.optInt("port", -1) ?: -1
+        val host = params?.optString("host", LanHost.LOOPBACK) ?: LanHost.LOOPBACK
         if (port < 1024) {
             return makeError(id, INVALID_PARAMS, "Invalid port: $port")
         }
-        val success = unrealManager.connectTo(port, setPreferred = true)
+        val success = unrealManager.connectTo(port, setPreferred = true, host = host)
         if (success) {
             // 连接成功后主动预热工具缓存并推送 tools/list_changed；
             // refresh task 跑到时 wasWsOpen 已为 true，无法再检测新连接事件，须在此主动触发。

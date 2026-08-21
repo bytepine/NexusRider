@@ -47,6 +47,10 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 | Scan port range | `45000`–`45100` | UE discovery; applied immediately after save |
 | Scan interval | `5` s | Periodic discovery; applied immediately after save |
 | Write gate | `destructive` | `off` / `destructive` (delete, rename, stop PIE) / `all` |
+| Allow LAN | off | Bind MCP to `0.0.0.0`; generated config uses this machine's LAN IP |
+| Remote UE | (empty) | One `host:mcpPort token` per line; no subnet scan |
+
+Cross-machine: [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md).
 
 The panel has **Streamable HTTP** / **SSE** buttons that generate copy-paste JSON for AI clients.
 

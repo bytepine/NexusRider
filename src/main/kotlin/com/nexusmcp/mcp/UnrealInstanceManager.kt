@@ -21,6 +21,7 @@ import org.java_websocket.handshake.ServerHandshake
  * UE 实例信息（已加载 NexusLink，可连接）。
  */
 data class UnrealInstanceInfo(
+    val host: String = LanHost.LOOPBACK,
     val port: Int,
     val wsPort: Int = port + 10000,
     val projectName: String = "",
@@ -47,6 +48,10 @@ class UnrealInstanceManager {
 
     var connectedPort: Int = -1
         private set
+    var connectedHost: String = LanHost.LOOPBACK
+        private set
+
+    var remoteUnreal: List<LanHost.RemoteUnreal> = emptyList()
 
     /** 当前连接的 UE 实例的工具列表模式（full/starter/custom），断连时重置为 "starter"。 */
     @Volatile var connectedToolsListMode: String = "starter"
@@ -136,11 +141,16 @@ class UnrealInstanceManager {
                 preferredPort > 0 -> preferredPort
                 else -> -1
             }
+            val reconnectHost = when {
+                connectedPort > 0 -> connectedHost
+                preferredPort > 0 -> preferredHost
+                else -> LanHost.LOOPBACK
+            }
 
             clearStaleConnectionState()
 
             if (reconnectPort > 0) {
-                return connectTo(reconnectPort, setPreferred = false)
+                return connectTo(reconnectPort, setPreferred = false, host = reconnectHost)
             }
 
             discoverInstances()
@@ -203,6 +213,7 @@ class UnrealInstanceManager {
      * 断连后自动重连优先连此端口，避免覆盖用户选择。
      */
     @Volatile var preferredPort: Int = -1
+    @Volatile var preferredHost: String = LanHost.LOOPBACK
 
     /**
      * 用户主动断开标志：为 true 时抑制自动重连，直到用户主动连接某实例后清除。
@@ -250,7 +261,7 @@ class UnrealInstanceManager {
             // 有挂起请求 = 连接正被使用，本身即存活证明，跳过探测避免 GameThread 忙时误判
             if (pendingRequests.isNotEmpty()) return
             if (fullScanCountdown.getAndDecrement() > 0) {
-                if (probeStatus(connectedPort) != null) return // 心跳成功，省去全量扫描
+                if (probeStatus(connectedPort, connectedHost) != null) return // 心跳成功，省去全量扫描
                 resetWsConnection(clearPreferred = false)      // 确实失联 → 重置后转全量重扫
             }
         }
@@ -278,21 +289,21 @@ class UnrealInstanceManager {
             }
         }
 
-        if (connectedPort > 0 && found.none { it.port == connectedPort }) {
-            log.info("已连接的 UE 实例 (端口 $connectedPort) 已不可用，自动断开")
+        if (connectedPort > 0 && found.none { isConnectedInfo(it) }) {
+            log.info("已连接的 UE 实例 (${connectedHost}:${connectedPort}) 已不可用，自动断开")
             resetWsConnection(clearPreferred = false)
         }
 
         // 用户手动断开后不自动重连，直到用户主动选择实例
         if (connectedPort < 0 && found.isNotEmpty() && !manuallyDisconnected) {
-            // 优先连用户手动指定的端口，其次连 Editor，最后取第一个
+            val prefKey = LanHost.instanceKey(preferredHost, preferredPort)
             val target = when {
-                preferredPort > 0 && found.any { it.port == preferredPort } ->
-                    found.first { it.port == preferredPort }
+                preferredPort > 0 && found.any { LanHost.instanceKey(it.host, it.port) == prefKey } ->
+                    found.first { LanHost.instanceKey(it.host, it.port) == prefKey }
                 else ->
                     found.firstOrNull { it.netRole.equals("Editor", ignoreCase = true) } ?: found[0]
             }
-            connectTo(target.port)
+            connectTo(target.port, host = target.host)
         }
 
         found
@@ -311,29 +322,42 @@ class UnrealInstanceManager {
         )
         return try {
             val futures = (start..end).map { port ->
-                pool.submit<UnrealInstanceInfo?> { probeStatus(port) }
+                pool.submit<UnrealInstanceInfo?> { probeStatus(port, LanHost.LOOPBACK) }
             }
-            futures.mapNotNull { it.get() }
+            val local = futures.mapNotNull { it.get() }
+            val remote = remoteUnreal.mapNotNull { probeStatus(it.mcpPort, it.host, it.authToken) }
+            local + remote
         } finally {
             pool.shutdown()
         }
     }
 
+    fun isConnectedInfo(info: UnrealInstanceInfo): Boolean =
+        connectedPort > 0 && LanHost.instanceKey(info.host, info.port) == LanHost.instanceKey(connectedHost, connectedPort)
+
+    private fun tokenFor(host: String, port: Int): String {
+        val h = LanHost.normalizeHost(host)
+        if (h == LanHost.LOOPBACK) return NexusMcpAuth.readUeAuthToken(port).orEmpty()
+        return remoteUnreal.find { it.host == h && it.mcpPort == port }?.authToken.orEmpty()
+    }
+
     /**
      * 通过 WebSocket 连接到指定端口的 UE 实例。
      */
-    fun connectTo(port: Int, setPreferred: Boolean = false): Boolean = synchronized(connectionLock) {
+    fun connectTo(port: Int, setPreferred: Boolean = false, host: String = LanHost.LOOPBACK): Boolean = synchronized(connectionLock) {
+        val targetHost = LanHost.normalizeHost(host)
         if (setPreferred) {
             preferredPort = port
+            preferredHost = targetHost
             manuallyDisconnected = false // 用户主动选择，恢复自动重连
         }
-        // 已连到同端口且 WS 存活：直接复用，避免 reset→重建造成连接抖动
-        if (connectedPort == port && isWsOpen()) return true
-        val info = probeStatus(port) ?: return false
+        // 已连到同实例且 WS 存活：直接复用，避免 reset→重建造成连接抖动
+        if (connectedPort == port && connectedHost == targetHost && isWsOpen()) return true
+        val info = probeStatus(port, targetHost, tokenFor(targetHost, port).ifBlank { null }) ?: return false
         resetWsConnection(clearPreferred = false)
 
         try {
-            val wsUri = URI("ws://127.0.0.1:${info.wsPort}")
+            val wsUri = URI("ws://${info.host}:${info.wsPort}")
             val epoch = connectionEpoch.incrementAndGet()
             wsClient = object : WebSocketClient(wsUri) {
                 override fun onOpen(handshakedata: ServerHandshake?) {
@@ -355,8 +379,9 @@ class UnrealInstanceManager {
                 override fun onClose(code: Int, reason: String?, remote: Boolean) {
                     if (connectionEpoch.get() != epoch) return
                     log.info("WebSocket 连接关闭: code=$code, reason=${reason.orEmpty()}, remote=$remote, port=$port")
-                    if (connectedPort == port) {
+                    if (connectedPort == port && connectedHost == targetHost) {
                         connectedPort = -1
+                        connectedHost = LanHost.LOOPBACK
                         connectedToolsListMode = "starter"
                         upstreamInstructions = ""
                         cachedProxyConfig = null
@@ -380,7 +405,7 @@ class UnrealInstanceManager {
 
             // 握手后再确认 isOpen，排除握手完成但随即被对端关闭的竞态
             if (success && wsClient?.isOpen == true) {
-                val token = info.authToken.ifBlank { NexusMcpAuth.readUeAuthToken(port).orEmpty() }
+                val token = info.authToken.ifBlank { tokenFor(targetHost, port) }
                 val authOutcome = sendWsRequestUnlocked("auth", JSONObject().put("token", token), 3000)
                 val authOk = authOutcome.status == WsRequestStatus.OK &&
                     authOutcome.response?.optJSONObject("result")?.optBoolean("ok") == true
@@ -391,6 +416,7 @@ class UnrealInstanceManager {
                     return false
                 }
                 connectedPort = port
+                connectedHost = targetHost
                 connectedToolsListMode = info.toolsListMode
                 // 启动应用层保活 ping（忙 5s / 闲 15s），替代库层 connectionLostTimeout
                 schedulePing()
@@ -431,12 +457,14 @@ class UnrealInstanceManager {
         wsClient?.close()
         wsClient = null
         connectedPort = -1
+        connectedHost = LanHost.LOOPBACK
         connectedToolsListMode = "starter"
         cachedToolsList = null
         upstreamInstructions = ""
         cachedProxyConfig = null
         if (clearPreferred) {
             preferredPort = -1
+            preferredHost = LanHost.LOOPBACK
         }
     }
 
@@ -520,11 +548,15 @@ class UnrealInstanceManager {
         port: Int,
         params: JSONObject,
         timeoutMs: Long = TOOLS_CALL_TIMEOUT_MS,
+        host: String = LanHost.LOOPBACK,
     ): WsRequestOutcome {
-        val info = instances.find { it.port == port } ?: probeStatus(port) ?: return WsRequestOutcome.disconnected()
+        val h = LanHost.normalizeHost(host)
+        val info = instances.find { it.port == port && LanHost.normalizeHost(it.host) == h }
+            ?: probeStatus(port, h, tokenFor(h, port).ifBlank { null })
+            ?: return WsRequestOutcome.disconnected()
         val authId = idCounter.getAndIncrement()
         val callId = idCounter.getAndIncrement()
-        val token = info.authToken.ifBlank { NexusMcpAuth.readUeAuthToken(port).orEmpty() }
+        val token = info.authToken.ifBlank { tokenFor(info.host, port) }
         val authRequest = JSONObject().apply {
             put("jsonrpc", "2.0")
             put("id", authId)
@@ -543,7 +575,7 @@ class UnrealInstanceManager {
         var oneShot: WebSocketClient? = null
         var authed = false
         return try {
-            oneShot = object : WebSocketClient(URI("ws://127.0.0.1:${info.wsPort}")) {
+            oneShot = object : WebSocketClient(URI("ws://${info.host}:${info.wsPort}")) {
                 override fun onOpen(handshakedata: ServerHandshake?) {
                     send(authRequest.toString())
                 }
@@ -594,9 +626,10 @@ class UnrealInstanceManager {
     /**
      * 通过 GET /status 探测 UE 实例（1 次 HTTP，无 MCP 握手）。
      */
-    private fun probeStatus(port: Int): UnrealInstanceInfo? {
+    private fun probeStatus(port: Int, host: String = LanHost.LOOPBACK, tokenOverride: String? = null): UnrealInstanceInfo? {
         return try {
-            val url = URI("http://127.0.0.1:$port/status").toURL()
+            val probeHost = LanHost.normalizeHost(host)
+            val url = URI("http://$probeHost:$port/status").toURL()
             val conn = url.openConnection() as HttpURLConnection
             conn.apply {
                 requestMethod = "GET"
@@ -628,13 +661,14 @@ class UnrealInstanceManager {
             if (!serverName.contains("Nexus", ignoreCase = true)) return null
 
             UnrealInstanceInfo(
+                host = probeHost,
                 port = port,
                 wsPort = json.optInt("wsPort", port + 10000),
                 projectName = json.optString("projectName", ""),
                 engineVersion = json.optString("engineVersion", ""),
                 netRole = json.optString("netRole", ""),
                 toolsListMode = json.optString("toolsListMode", "starter"),
-                authToken = NexusMcpAuth.readUeAuthToken(port).orEmpty(),
+                authToken = tokenOverride ?: if (probeHost == LanHost.LOOPBACK) NexusMcpAuth.readUeAuthToken(port).orEmpty() else "",
             )
         } catch (_: Exception) {
             null

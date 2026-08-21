@@ -39,7 +39,7 @@
 
         <p>Source &amp; docs:
         <a href="https://github.com/bytepine/NexusRider">github.com/bytepine/NexusRider</a>.
-        All network traffic is bound to <code>127.0.0.1</code>; no telemetry is collected.</p>
+        All network traffic is bound to <code>127.0.0.1</code> by default; LAN bind is optional. No telemetry is collected.</p>
 
         <hr/>
 
@@ -75,7 +75,7 @@
 
         <p>源码与文档：
         <a href="https://github.com/bytepine/NexusRider">github.com/bytepine/NexusRider</a>。
-        所有网络通信均绑定 <code>127.0.0.1</code>，不采集任何遥测数据。</p>
+        默认绑定 <code>127.0.0.1</code>，可改为局域网监听。不采集任何遥测数据。</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

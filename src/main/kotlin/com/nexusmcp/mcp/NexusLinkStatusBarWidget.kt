@@ -76,8 +76,8 @@ class NexusLinkStatusBarWidget(private val project: Project) :
         val act = manager.sessionHub.getActivity()
         if (act?.paused == true) return "⏸ Nexus 已暂停"
         return if (manager.connectedPort > 0) {
-            val info = manager.instances.find { it.port == manager.connectedPort }
-            val name = info?.projectName?.takeIf { it.isNotEmpty() } ?: "${manager.connectedPort}"
+            val info = manager.instances.find { manager.isConnectedInfo(it) }
+            val name = info?.projectName?.takeIf { it.isNotEmpty() } ?: "${manager.connectedHost}:${manager.connectedPort}"
             val suffix = act?.capability?.takeIf { it.isNotEmpty() }?.let { cap ->
                 val id = act.identity.takeIf { it.isNotEmpty() }?.let { " " + it.take(24) } ?: ""
                 " · $cap$id"
@@ -100,10 +100,10 @@ class NexusLinkStatusBarWidget(private val project: Project) :
             ?: return "$serverLine\nUE：未初始化"
 
         val ueLine = if (manager.connectedPort > 0) {
-            val info = manager.instances.find { it.port == manager.connectedPort }
-            val name = info?.projectName?.takeIf { it.isNotEmpty() } ?: "${manager.connectedPort}"
+            val info = manager.instances.find { manager.isConnectedInfo(it) }
+            val name = info?.projectName?.takeIf { it.isNotEmpty() } ?: "${manager.connectedHost}:${manager.connectedPort}"
             val ver = info?.engineVersion?.takeIf { it.isNotEmpty() }?.let { " · UE $it" } ?: ""
-            "已连接 UE：$name$ver（端口 ${manager.connectedPort}）"
+            "已连接 UE：$name$ver（${manager.connectedHost}:${manager.connectedPort}）"
         } else {
             "UE：未连接"
         }
@@ -134,13 +134,12 @@ class NexusLinkStatusBarWidget(private val project: Project) :
         } else {
             // 可连接的 NexusLink 实例
             instances.forEach { info ->
-                val name = info.projectName.ifEmpty { "端口 ${info.port}" }
+                val name = info.projectName.ifEmpty { "${info.host}:${info.port}" }
                 val ver = if (info.engineVersion.isNotEmpty()) "   UE ${info.engineVersion}" else ""
-                val mark = if (info.port == manager.connectedPort) "  ✓" else ""
-                items.add(PopupItem("$name$ver   :${info.port}$mark") {
+                val mark = if (manager.isConnectedInfo(info)) "  ✓" else ""
+                items.add(PopupItem("$name$ver   ${info.host}:${info.port}$mark") {
                     AppExecutorUtil.getAppExecutorService().submit {
-                        // 用户主动选择 → 记录为 preferredPort，避免被自动发现逻辑覆盖
-                        manager.connectTo(info.port, setPreferred = true)
+                        manager.connectTo(info.port, setPreferred = true, host = info.host)
                         statusBar?.updateWidget(WIDGET_ID)
                     }
                 })

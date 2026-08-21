@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- feat(mcp): 允许局域网接入 + 远程 UE 列表（`host:mcpPort token`）；实例主键 `host:port`
+
+### Security
+
+- 默认仍绑 loopback；`plugin.xml` 改为默认 loopback、可选局域网
+
 ## [2.0.0-beta.1] - 2026-08-21
 
 > ⚠️ Pre-release，非生产环境使用。

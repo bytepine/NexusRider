@@ -62,7 +62,7 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
     var port: Int = 0
         private set
 
-    fun start(port: Int): Boolean {
+    fun start(port: Int, bindHost: String = LanHost.LOOPBACK): Boolean {
         if (channel != null) {
             log.warn("MCP 服务器已在端口 ${this.port} 运行")
             return true
@@ -80,7 +80,7 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
             val bootstrap = ServerBootstrap()
                 .group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel::class.java)
-                .localAddress(InetSocketAddress("127.0.0.1", port))
+                .localAddress(InetSocketAddress(bindHost, port))
                 .childHandler(object : ChannelInitializer<SocketChannel>() {
                     override fun initChannel(ch: SocketChannel) {
                         ch.pipeline().apply {
@@ -92,7 +92,7 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
                 })
 
             channel = bootstrap.bind().sync().channel()
-            log.info("MCP HTTP 服务器已启动  stream: http://127.0.0.1:$port/stream  sse: http://127.0.0.1:$port/sse")
+            log.info("MCP HTTP 服务器已启动  bind=$bindHost  stream: http://${LanHost.mcpDisplayHost(bindHost != LanHost.LOOPBACK)}:$port/stream")
             true
         } catch (e: Exception) {
             log.error("MCP 服务器启动失败：${e.message}")
