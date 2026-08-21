@@ -16,6 +16,10 @@
 - perf(mcp): `handleInitialize` 的连接状态文案改为固定句（以 tools/list 为准），避免随 WS 通断打穿 `cache_control: ephemeral`
 - docs: README 改为本产品落地页（安装/设置/FAQ）；全家桶端口与开关矩阵改链 NexusLink `docs/usage-guide.md`
 
+### Fixed
+
+- fix(mcp): 保存 MCP 端口后立即重启监听；扫描区间/间隔保存后立即重建发现任务
+
 ## [1.4.5] - 2026-07-17
 
 ### Added

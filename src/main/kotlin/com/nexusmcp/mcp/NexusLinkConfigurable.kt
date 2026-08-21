@@ -54,20 +54,33 @@ class NexusLinkConfigurable : Configurable {
     override fun isModified() = dialogPanel?.isModified() == true
 
     override fun apply() {
-        val prevEnabled = NexusLinkSettings.instance.state.enabled
+        val state = NexusLinkSettings.instance.state
+        val prevEnabled = state.enabled
+        val prevPort = state.mcpPort
+        val prevScanStart = state.scanPortStart
+        val prevScanEnd = state.scanPortEnd
+        val prevInterval = state.scanIntervalSeconds
         dialogPanel?.apply()
-        val nowEnabled = NexusLinkSettings.instance.state.enabled
-        val gate = ProxySessionPolicy.parseWriteGate(NexusLinkSettings.instance.state.writeGate)
-        ProjectManager.getInstance().openProjects.forEach { project ->
+        val nowEnabled = state.enabled
+        val portChanged = prevPort != state.mcpPort
+        val scanChanged = prevScanStart != state.scanPortStart
+            || prevScanEnd != state.scanPortEnd
+            || prevInterval != state.scanIntervalSeconds
+        val gate = ProxySessionPolicy.parseWriteGate(state.writeGate)
+        val projects = ProjectManager.getInstance().openProjects
+        projects.forEach { project ->
             project.getUserData(NexusLinkStartupActivity.MANAGER_KEY)?.sessionHub?.writeGate = gate
         }
 
-        if (prevEnabled != nowEnabled) {
-            val projects = ProjectManager.getInstance().openProjects
-            AppExecutorUtil.getAppExecutorService().submit {
-                projects.forEach { project ->
-                    if (nowEnabled) NexusLinkStartupActivity.startServer(project)
-                    else            NexusLinkStartupActivity.stopServer(project)
+        AppExecutorUtil.getAppExecutorService().submit {
+            projects.forEach { project ->
+                when {
+                    !nowEnabled -> NexusLinkStartupActivity.stopServer(project)
+                    portChanged || prevEnabled != nowEnabled -> {
+                        if (portChanged) NexusLinkStartupActivity.stopServer(project)
+                        NexusLinkStartupActivity.startServer(project)
+                    }
+                    scanChanged -> NexusLinkStartupActivity.applyLiveScanSettings(project)
                 }
             }
         }
@@ -98,7 +111,7 @@ class NexusLinkConfigurable : Configurable {
                 row("MCP 端口:") {
                     mcpPortCell = intTextField(1024..65535)
                         .bindIntText(state::mcpPort)
-                    comment("AI 客户端连接此端口。修改后需重启 Rider 生效。")
+                    comment("AI 客户端连接此端口。修改后保存即生效。")
                 }
             }
 
@@ -118,7 +131,7 @@ class NexusLinkConfigurable : Configurable {
                     intTextField(1..3600)
                         .bindIntText(state::scanIntervalSeconds)
                     label("秒")
-                    comment("修改后重启 MCP 服务器生效")
+                    comment("修改后保存即生效")
                 }
             }
 

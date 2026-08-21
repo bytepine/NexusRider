@@ -4,7 +4,7 @@
 
 JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`），发现 UE 实例，经 WebSocket 把 AI 工具调用转发给 **NexusLink**。蓝图、资产、PIE 等能力由 UE 侧提供，本插件不实现游戏逻辑。
 
-四端端口与开关层数见 [NexusLink 使用指南](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。本插件是三层开关中的 IDE 层。
+四端端口与开关层数见 [NexusLink 使用指南](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。本插件是三层开关中的 IDE 层。本机不要与 NexusDesktop / VSCode 代理同时开。
 
 ---
 
@@ -43,9 +43,9 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | 启用 Nexus MCP 服务器 | `false` | 总开关；勾选/取消立即启停 |
-| MCP 端口 | `6800` | AI 客户端连接端口；**修改后需重启 Rider** |
-| 扫描端口范围 | `45000`–`45100` | UE 发现范围；改后关开总开关即可 |
-| 扫描间隔 | `5` 秒 | 定时发现间隔 |
+| MCP 端口 | `6800` | AI 客户端连接端口；保存后立即重启监听 |
+| 扫描端口范围 | `45000`–`45100` | UE 发现范围；保存后立即生效 |
+| 扫描间隔 | `5` 秒 | 定时发现间隔；保存后立即生效 |
 | 写操作门控 | `destructive` | `off` / `destructive`（删除、重命名、停 PIE）/ `all` |
 
 设置面板提供「Streamable HTTP 配置」「SSE 配置」按钮，生成可复制的 AI 客户端 JSON。

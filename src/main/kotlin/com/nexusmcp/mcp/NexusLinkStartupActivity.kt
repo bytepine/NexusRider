@@ -120,14 +120,31 @@ class NexusLinkStartupActivity : ProjectActivity {
                 "MCP 服务器已就绪：<code>http://127.0.0.1:$port/stream</code>（Streamable HTTP）| <code>http://127.0.0.1:$port/sse</code>（SSE）"
             notifyInfo(project, msg)
 
-            // 启动 UE 实例发现定时任务（若尚未运行则创建新任务）
-            // 语义：已有任务且仍在运行 → 直接复用；否则（null 或已结束）→ 取消后重建
-            val existingTask = project.getUserData(REFRESH_TASK_KEY)
-            if (existingTask != null && !existingTask.isDone) {
-                refreshStatusBar(project)
-                return
+            // 启动 UE 实例发现定时任务
+            restartRefreshTask(project, manager)
+            refreshStatusBar(project)
+        }
+
+        /** 热更新扫描区间/间隔：改 manager 并重建定时任务，不重启 HTTP。 */
+        fun applyLiveScanSettings(project: Project) {
+            val settings = NexusLinkSettings.instance.state
+            val manager = project.getUserData(MANAGER_KEY) ?: return
+            manager.scanPortStart = settings.scanPortStart
+            manager.scanPortEnd = settings.scanPortEnd
+            val scanMin = minOf(settings.scanPortStart, settings.scanPortEnd)
+            val scanMax = maxOf(settings.scanPortStart, settings.scanPortEnd)
+            if (settings.mcpPort in scanMin..scanMax) {
+                val warnMsg = "MCP 端口 ${settings.mcpPort} 与 UE 扫描区间 [$scanMin, $scanMax] 重叠，可能导致代理端口被误当 UE 实例探测，请调整配置"
+                log.warn(warnMsg)
+                notifyError(project, warnMsg)
             }
-            existingTask?.cancel(false)
+            restartRefreshTask(project, manager)
+            refreshStatusBar(project)
+        }
+
+        private fun restartRefreshTask(project: Project, manager: UnrealInstanceManager) {
+            val settings = NexusLinkSettings.instance.state
+            project.getUserData(REFRESH_TASK_KEY)?.cancel(false)
             val refreshTask = AppExecutorUtil.getAppScheduledExecutorService()
                 .scheduleWithFixedDelay(
                     {
@@ -147,7 +164,6 @@ class NexusLinkStartupActivity : ProjectActivity {
                     0, settings.scanIntervalSeconds.toLong(), TimeUnit.SECONDS
                 )
             project.putUserData(REFRESH_TASK_KEY, refreshTask)
-            refreshStatusBar(project)
         }
 
         /** 停止 MCP 服务器及定时任务。 */

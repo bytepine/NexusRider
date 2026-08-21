@@ -4,7 +4,7 @@
 
 JetBrains Rider MCP **proxy**: local HTTP server (default `:6800`), discovers UE instances, and forwards AI tool calls to **NexusLink** over WebSocket. Blueprints, assets, PIE, and other capabilities come from the UE plugin; this plugin does not implement game logic.
 
-Ports and switch layers: [NexusLink usage guide](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md). This plugin is the IDE layer of the three-layer switch.
+Ports and switch layers: [NexusLink usage guide](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md). This plugin is the IDE layer of the three-layer switch. Do not run NexusDesktop or the VSCode proxy on the same machine at the same time.
 
 ---
 
@@ -43,9 +43,9 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 | Setting | Default | Notes |
 |---------|---------|-------|
 | Enable Nexus MCP Server | `false` | Master switch; starts/stops immediately |
-| MCP port | `6800` | AI client port; **restart Rider after changing** |
-| Scan port range | `45000`–`45100` | UE discovery; toggle the master switch after changing |
-| Scan interval | `5` s | Periodic discovery |
+| MCP port | `6800` | AI client port; listen restarts immediately after save |
+| Scan port range | `45000`–`45100` | UE discovery; applied immediately after save |
+| Scan interval | `5` s | Periodic discovery; applied immediately after save |
 | Write gate | `destructive` | `off` / `destructive` (delete, rename, stop PIE) / `all` |
 
 The panel has **Streamable HTTP** / **SSE** buttons that generate copy-paste JSON for AI clients.
