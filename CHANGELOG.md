@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+## [2.0.0-beta.1] - 2026-08-21
+
+> ⚠️ Pre-release，非生产环境使用。
+
 ### Added
 
 - feat(mcp): 代理会话层——TTL/section 读缓存、断线 `degraded` 快照、写门控（设置「写操作门控」）、状态栏暂停/恢复 Agent 转发与最近调用显示；超大响应落盘临时目录
