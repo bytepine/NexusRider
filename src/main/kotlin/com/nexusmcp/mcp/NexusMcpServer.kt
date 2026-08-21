@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
  *
  * 不依赖 Rider 内置 MCP Server，可独立运行。
  */
-class NexusMcpServer(private val unrealManager: UnrealInstanceManager) {
+class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private val proxyToken: String) {
 
     private val log = logger<NexusMcpServer>()
 
@@ -86,7 +86,7 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager) {
                         ch.pipeline().apply {
                             addLast(HttpServerCodec())
                             addLast(HttpObjectAggregator(1024 * 1024))
-                            addLast(McpHttpHandler(sessions, mgr, executor, sse) { sendToolsChangedNotification() })
+                            addLast(McpHttpHandler(sessions, mgr, executor, sse, proxyToken) { sendToolsChangedNotification() })
                         }
                     }
                 })
@@ -139,6 +139,8 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager) {
     }
 
     val isRunning: Boolean get() = channel?.isActive == true
+
+    fun getProxyToken(): String = proxyToken
 }
 
 private const val MCP_SESSION_HEADER = "Mcp-Session-Id"
@@ -147,26 +149,36 @@ private const val MCP_SESSION_HEADER = "Mcp-Session-Id"
  * Netty HTTP 请求处理器（per-session 会话隔离）。
  *   POST /stream  → Streamable HTTP，通过 Mcp-Session-Id 头隔离会话
  *   GET  /sse     → SSE 长连接，静默保持，用于服务端通知推送
- *   OPTIONS /stream、OPTIONS /sse → CORS 预检
  */
 private class McpHttpHandler(
     private val sessions: MutableMap<String, NexusMcpDispatcher>,
     private val unrealManager: UnrealInstanceManager,
     private val executor: ExecutorService,
     private val sseContexts: CopyOnWriteArrayList<ChannelHandlerContext>,
+    private val proxyToken: String,
     private val onSessionReady: () -> Unit,
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
     private val log = com.intellij.openapi.diagnostic.logger<McpHttpHandler>()
 
     override fun channelRead0(ctx: ChannelHandlerContext, request: FullHttpRequest) {
+        val origin = request.headers().get(HttpHeaderNames.ORIGIN)
+        if (!origin.isNullOrBlank()) {
+            sendResponse(ctx, HttpResponseStatus.FORBIDDEN, """{"error":"Browser Origin is not allowed"}""")
+            return
+        }
+        val presented = NexusMcpAuth.extractBearer(request.headers().get(HttpHeaderNames.AUTHORIZATION))
+        if (!NexusMcpAuth.tokensEqual(presented, proxyToken)) {
+            sendResponse(ctx, HttpResponseStatus.UNAUTHORIZED, """{"error":"Missing or invalid Authorization: Bearer token"}""")
+            return
+        }
+
         val path = request.uri().split("?").first()
         val method = request.method()
         when {
             path == "/stream" && method == HttpMethod.POST    -> handlePost(ctx, request)
             path == "/sse"    && method == HttpMethod.GET     -> handleGet(ctx)
             path == "/stream" && method == HttpMethod.GET     -> handleGet(ctx)
-            method == HttpMethod.OPTIONS && (path == "/stream" || path == "/sse") -> handleOptions(ctx)
             else -> sendResponse(ctx, HttpResponseStatus.NOT_FOUND, """{"error":"Not Found"}""")
         }
     }
@@ -243,7 +255,6 @@ private class McpHttpHandler(
             set(HttpHeaderNames.CONNECTION, "keep-alive")
             set(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
         }
-        addCorsHeaders(response)
         ctx.writeAndFlush(response)
 
         sseContexts.add(ctx)
@@ -265,14 +276,6 @@ private class McpHttpHandler(
         private const val SSE_KEEPALIVE_MS = 20_000L
     }
 
-    private fun handleOptions(ctx: ChannelHandlerContext) {
-        val response = DefaultFullHttpResponse(
-            HttpVersion.HTTP_1_1, HttpResponseStatus.NO_CONTENT, Unpooled.EMPTY_BUFFER
-        )
-        addCorsHeaders(response)
-        ctx.writeAndFlush(response)
-    }
-
     private fun sendResponse(
         ctx: ChannelHandlerContext,
         status: HttpResponseStatus,
@@ -287,7 +290,6 @@ private class McpHttpHandler(
             set(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes())
         }
         if (sessionId != null) response.headers().set(MCP_SESSION_HEADER, sessionId)
-        addCorsHeaders(response)
         ctx.writeAndFlush(response)
     }
 
@@ -295,21 +297,12 @@ private class McpHttpHandler(
         val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, Unpooled.EMPTY_BUFFER)
         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0)
         if (sessionId != null) response.headers().set(MCP_SESSION_HEADER, sessionId)
-        addCorsHeaders(response)
         ctx.writeAndFlush(response)
     }
 
-    private fun addCorsHeaders(response: HttpResponse) {
-        response.headers().apply {
-            set("Access-Control-Allow-Origin", "*")
-            set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            set("Access-Control-Allow-Headers", "Content-Type, $MCP_SESSION_HEADER")
-            set("Access-Control-Expose-Headers", MCP_SESSION_HEADER)
-        }
-    }
-
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
-        sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, """{"error":"${cause.message}"}""")
+        val payload = org.json.JSONObject().put("error", cause.message ?: "internal error").toString()
+        sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, payload)
         ctx.close()
     }
 }

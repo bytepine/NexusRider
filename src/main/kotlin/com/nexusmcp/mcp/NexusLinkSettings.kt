@@ -31,6 +31,8 @@ class NexusLinkSettings : PersistentStateComponent<NexusLinkSettings.State> {
         var scanIntervalSeconds: Int = 5,
         /** 写门控：off / destructive / all。 */
         var writeGate: String = "destructive",
+        /** Agent → 代理 Bearer token。 */
+        var proxyToken: String = "",
     )
 
     private var state = State()

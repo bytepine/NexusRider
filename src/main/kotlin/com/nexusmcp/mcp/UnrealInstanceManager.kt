@@ -29,6 +29,7 @@ data class UnrealInstanceInfo(
     val netRole: String = "",
     /** UE 工具列表暴露模式（历史字段），供状态探测；代理侧仅暴露 list/connect。 */
     val toolsListMode: String = "starter",
+    val authToken: String = "",
 )
 
 /**
@@ -379,6 +380,16 @@ class UnrealInstanceManager {
 
             // 握手后再确认 isOpen，排除握手完成但随即被对端关闭的竞态
             if (success && wsClient?.isOpen == true) {
+                val token = info.authToken.ifBlank { NexusMcpAuth.readUeAuthToken(port).orEmpty() }
+                val authOutcome = sendWsRequestUnlocked("auth", JSONObject().put("token", token), 3000)
+                val authOk = authOutcome.status == WsRequestStatus.OK &&
+                    authOutcome.response?.optJSONObject("result")?.optBoolean("ok") == true
+                if (!authOk) {
+                    log.warn("WebSocket auth 失败（端口 $port）")
+                    wsClient?.close()
+                    wsClient = null
+                    return false
+                }
                 connectedPort = port
                 connectedToolsListMode = info.toolsListMode
                 // 启动应用层保活 ping（忙 5s / 闲 15s），替代库层 connectionLostTimeout
@@ -511,10 +522,18 @@ class UnrealInstanceManager {
         timeoutMs: Long = TOOLS_CALL_TIMEOUT_MS,
     ): WsRequestOutcome {
         val info = instances.find { it.port == port } ?: probeStatus(port) ?: return WsRequestOutcome.disconnected()
-        val id = idCounter.getAndIncrement()
+        val authId = idCounter.getAndIncrement()
+        val callId = idCounter.getAndIncrement()
+        val token = info.authToken.ifBlank { NexusMcpAuth.readUeAuthToken(port).orEmpty() }
+        val authRequest = JSONObject().apply {
+            put("jsonrpc", "2.0")
+            put("id", authId)
+            put("method", "auth")
+            put("params", JSONObject().put("token", token))
+        }
         val request = JSONObject().apply {
             put("jsonrpc", "2.0")
-            put("id", id)
+            put("id", callId)
             put("method", "tools/call")
             put("params", params)
         }
@@ -522,15 +541,22 @@ class UnrealInstanceManager {
         val latch = CountDownLatch(1)
         val holder = arrayOfNulls<String>(1)
         var oneShot: WebSocketClient? = null
+        var authed = false
         return try {
             oneShot = object : WebSocketClient(URI("ws://127.0.0.1:${info.wsPort}")) {
                 override fun onOpen(handshakedata: ServerHandshake?) {
-                    send(request.toString())
+                    send(authRequest.toString())
                 }
                 override fun onMessage(message: String) {
                     try {
                         val json = JSONObject(message)
-                        if (json.optInt("id", -1) == id) {
+                        val rid = json.optInt("id", -1)
+                        if (!authed && rid == authId) {
+                            authed = json.optJSONObject("result")?.optBoolean("ok") == true
+                            if (authed) send(request.toString()) else latch.countDown()
+                            return
+                        }
+                        if (rid == callId) {
                             holder[0] = message
                             latch.countDown()
                         }
@@ -576,6 +602,7 @@ class UnrealInstanceManager {
                 requestMethod = "GET"
                 connectTimeout = 1000
                 readTimeout = 1000
+                instanceFollowRedirects = false
             }
             if (conn.responseCode != 200) return null
 
@@ -607,6 +634,7 @@ class UnrealInstanceManager {
                 engineVersion = json.optString("engineVersion", ""),
                 netRole = json.optString("netRole", ""),
                 toolsListMode = json.optString("toolsListMode", "starter"),
+                authToken = NexusMcpAuth.readUeAuthToken(port).orEmpty(),
             )
         } catch (_: Exception) {
             null

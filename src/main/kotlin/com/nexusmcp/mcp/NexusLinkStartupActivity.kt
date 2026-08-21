@@ -43,6 +43,9 @@ class NexusLinkStartupActivity : ProjectActivity {
          */
         fun startServer(project: Project) {
             val settings = NexusLinkSettings.instance.state
+            if (settings.proxyToken.isBlank()) {
+                settings.proxyToken = NexusMcpAuth.generateToken()
+            }
 
             if (!settings.enabled) {
                 log.info("Nexus MCP 服务器已禁用，跳过启动")
@@ -87,7 +90,7 @@ class NexusLinkStartupActivity : ProjectActivity {
                 project.getUserData(MCP_SERVER_KEY)?.sendToolsChangedNotification()
             }
 
-            val server = NexusMcpServer(manager)
+            val server = NexusMcpServer(manager, settings.proxyToken)
             val port   = findAvailablePort(settings.mcpPort)
 
             // 检测 MCP 端口与 UE 扫描区间重叠，误配时 AI 会把代理自身当 UE 实例扫到

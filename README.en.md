@@ -65,13 +65,16 @@ Click to switch instances. A single instance auto-connects; multiple instances p
 
 Default `http://127.0.0.1:6800/stream`. On collision the port advances; use the startup notice or settings panel. Bound to `127.0.0.1`.
 
-**Cursor** (`~/.cursor/mcp.json`):
+**Cursor** (`~/.cursor/mcp.json`). Copy the snippet (including token) from the settings panel:
 
 ```json
 {
   "mcpServers": {
     "nexus-unreal": {
-      "url": "http://127.0.0.1:6800/stream"
+      "url": "http://127.0.0.1:6800/stream",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
     }
   }
 }

@@ -16,6 +16,12 @@
 - perf(mcp): `handleInitialize` 的连接状态文案改为固定句（以 tools/list 为准），避免随 WS 通断打穿 `cache_control: ephemeral`
 - docs: README 改为本产品落地页（安装/设置/FAQ）；全家桶端口与开关矩阵改链 NexusLink `docs/usage-guide.md`
 
+### Security
+
+- MCP `/stream` 须 Bearer 且拒绝 Origin；去掉 CORS `*`
+- 连 UE 时读实例注册表 token，WebSocket 首帧 `auth`；`GET /status` 不跟随重定向
+- `exceptionCaught` 改为结构化 JSON，不再拼接异常原文
+
 ### Fixed
 
 - fix(mcp): 保存 MCP 端口后立即重启监听；扫描区间/间隔保存后立即重建发现任务

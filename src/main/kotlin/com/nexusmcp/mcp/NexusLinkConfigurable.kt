@@ -47,6 +47,10 @@ class NexusLinkConfigurable : Configurable {
     override fun getDisplayName() = "Nexus MCP"
 
     override fun createComponent(): JComponent {
+        val st = NexusLinkSettings.instance.state
+        if (st.proxyToken.isBlank()) {
+            st.proxyToken = NexusMcpAuth.generateToken()
+        }
         dialogPanel = buildPanel()
         return dialogPanel!!
     }
@@ -188,13 +192,19 @@ class NexusLinkConfigurable : Configurable {
   "url": "http://127.0.0.1:$port/stream",
   "transportType": "streamable-http",
   "description": "NexusLink MCP Server for Unreal Engine",
-  "disabled": false
+  "disabled": false,
+  "headers": {
+    "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
+  }
 }
 
 # ── Cursor ────────────────────────────────────────────────
 # 配置路径：~/.cursor/mcp.json → mcpServers 节点下
 "nexus-unreal": {
-  "url": "http://127.0.0.1:$port/stream"
+  "url": "http://127.0.0.1:$port/stream",
+  "headers": {
+    "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
+  }
 }
     """.trimIndent()
 
@@ -204,13 +214,19 @@ class NexusLinkConfigurable : Configurable {
 # 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
 "Nexus": {
   "url": "http://127.0.0.1:$port/sse",
-  "disabled": false
+  "disabled": false,
+  "headers": {
+    "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
+  }
 }
 
 # ── Cursor ────────────────────────────────────────────────
 # 配置路径：~/.cursor/mcp.json → mcpServers 节点下
 "nexus-unreal": {
-  "url": "http://127.0.0.1:$port/sse"
+  "url": "http://127.0.0.1:$port/sse",
+  "headers": {
+    "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
+  }
 }
     """.trimIndent()
 }

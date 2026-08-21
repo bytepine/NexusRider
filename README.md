@@ -65,13 +65,16 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 默认 `http://127.0.0.1:6800/stream`。端口被占用会顺延，以启动通知或设置面板为准。绑定 `127.0.0.1`。
 
-**Cursor**（`~/.cursor/mcp.json`）：
+**Cursor**（`~/.cursor/mcp.json`）。Token 从设置面板「复制」取得：
 
 ```json
 {
   "mcpServers": {
     "nexus-unreal": {
-      "url": "http://127.0.0.1:6800/stream"
+      "url": "http://127.0.0.1:6800/stream",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
     }
   }
 }
