@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+## [2.0.0-beta.2] - 2026-08-26
+
+> ⚠️ Pre-release，非生产环境使用。
+
 ### Added
 
 - feat(mcp): 允许局域网接入 + 远程 UE 列表（`host:mcpPort token`）；实例主键 `host:port`
