@@ -55,7 +55,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 跨机与鉴权见 [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
 
-设置面板提供「Streamable HTTP 配置」「SSE 配置」按钮，生成可复制的 AI 客户端 JSON。
+设置面板提供「Streamable HTTP 配置」「SSE 配置」按钮；开 LAN 且多网卡时先选 IP。生成的 Bearer 仅本机 token。
 
 ### 4. 状态栏
 

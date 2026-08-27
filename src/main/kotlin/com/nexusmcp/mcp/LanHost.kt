@@ -13,6 +13,11 @@ object LanHost {
         val authToken: String,
     )
 
+    data class LanIPv4(
+        val name: String,
+        val address: String,
+    )
+
     fun normalizeHost(host: String?): String {
         val h = host?.trim().orEmpty()
         if (h.isEmpty() || h.equals("localhost", ignoreCase = true) || h == "::1") {
@@ -40,16 +45,35 @@ object LanHost {
         }.toList()
     }
 
-    fun firstLanIPv4(): String? {
-        val nics = NetworkInterface.getNetworkInterfaces() ?: return null
+    /** 已启用、非 loopback、非 169.254 的 IPv4（含网卡名）。 */
+    fun listLanIPv4(): List<LanIPv4> {
+        val nics = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
+        val out = mutableListOf<LanIPv4>()
         for (nic in nics) {
             if (!nic.isUp || nic.isLoopback) continue
+            val name = nic.displayName ?: nic.name
             for (addr in nic.inetAddresses) {
                 if (addr.isLoopbackAddress || addr.hostAddress.contains(':')) continue
-                return addr.hostAddress
+                val ip = addr.hostAddress.substringBefore('%')
+                if (ip.startsWith("169.254.")) continue
+                out.add(LanIPv4(name, ip))
             }
         }
-        return null
+        return out
+    }
+
+    fun firstLanIPv4(): String? = listLanIPv4().firstOrNull()?.address
+
+    /**
+     * 复制 mcp.json 用的 host。
+     * 未开 LAN → 127.0.0.1；仅一块局域网 IP → 直接用；多块 → choices 非空供 UI 选择。
+     */
+    fun copyHostChoices(listenLan: Boolean): Pair<String, List<LanIPv4>> {
+        if (!listenLan) return LOOPBACK to emptyList()
+        val lan = listLanIPv4()
+        if (lan.isEmpty()) return LOOPBACK to emptyList()
+        if (lan.size == 1) return lan[0].address to emptyList()
+        return "" to (listOf(LanIPv4("本机", LOOPBACK)) + lan)
     }
 
     fun mcpDisplayHost(listenLan: Boolean): String {

@@ -2,6 +2,7 @@
 
 package com.nexusmcp.mcp
 
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.ProjectManager
@@ -64,8 +65,25 @@ class NexusLinkConfigurable : Configurable {
         val prevScanEnd = state.scanPortEnd
         val prevInterval = state.scanIntervalSeconds
         val prevListenLan = state.listenLan
+        val prevRequireAuth = state.requireAuth
         val prevRemote = state.remoteUnrealText
         dialogPanel?.apply()
+        val enteredDanger = state.listenLan && !state.requireAuth && !(prevListenLan && !prevRequireAuth)
+        if (enteredDanger) {
+            val ok = Messages.showYesNoDialog(
+                "局域网可达且未鉴权时，同网段主机都能控制编辑器。确定继续？不要做公网映射。",
+                "Nexus MCP",
+                "继续",
+                "取消",
+                null,
+            ) == Messages.YES
+            if (!ok) {
+                state.listenLan = prevListenLan
+                state.requireAuth = prevRequireAuth
+                dialogPanel?.reset()
+                return
+            }
+        }
         val nowEnabled = state.enabled
         val portChanged = prevPort != state.mcpPort || prevListenLan != state.listenLan
         val scanChanged = prevScanStart != state.scanPortStart
@@ -196,12 +214,14 @@ class NexusLinkConfigurable : Configurable {
                 row {
                     button("Streamable HTTP 配置") {
                         val port = mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort
-                        configPreview.text = buildStreamConfig(port, LanHost.mcpDisplayHost(state.listenLan))
+                        val host = pickCopyHost(state.listenLan) ?: return@button
+                        configPreview.text = buildStreamConfig(port, host)
                         configPreview.caretPosition = 0
                     }
                     button("SSE 配置") {
                         val port = mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort
-                        configPreview.text = buildSseConfig(port, LanHost.mcpDisplayHost(state.listenLan))
+                        val host = pickCopyHost(state.listenLan) ?: return@button
+                        configPreview.text = buildSseConfig(port, host)
                         configPreview.caretPosition = 0
                     }.align(AlignX.LEFT)
                     // 一键复制当前预览内容（与 VSCode copyMcpConfig 对齐；占位文本时静默 no-op）
@@ -262,11 +282,27 @@ class NexusLinkConfigurable : Configurable {
     private fun mcpAuthHeaders(): String {
         val st = NexusLinkSettings.instance.state
         if (!st.requireAuth) return ""
-        val tokens = NexusMcpAuth.parseAuthTokens(st.proxyToken, st.extraAuthTokens)
-        if (tokens.isEmpty()) return ""
+        val token = st.proxyToken
+        if (token.isBlank()) return ""
         return """,
   "headers": {
-    "Authorization": "Bearer ${tokens.joinToString(", ")}"
+    "Authorization": "Bearer $token"
   }"""
+    }
+
+    /** 开 LAN 且多网卡时选择写入 mcp.json 的 IP；取消则返回 null。 */
+    private fun pickCopyHost(listenLan: Boolean): String? {
+        val (auto, choices) = LanHost.copyHostChoices(listenLan)
+        if (choices.isEmpty()) return auto
+        val labels = choices.map { "${it.name} ${it.address}" }.toTypedArray()
+        val idx = Messages.showChooseDialog(
+            "选择网卡 IP（写入 mcp.json 的 url）",
+            "Nexus MCP",
+            labels,
+            labels[0],
+            null,
+        )
+        if (idx < 0) return null
+        return choices[idx].address
     }
 }

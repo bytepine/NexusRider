@@ -55,7 +55,7 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 
 Cross-machine and auth: [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md).
 
-The panel has **Streamable HTTP** / **SSE** buttons that generate copy-paste JSON for AI clients.
+The panel has **Streamable HTTP** / **SSE** buttons; if LAN is on and multiple NICs exist, pick an IP first. Copied Bearer is this machine's token only.
 
 ### 4. Status bar
 
