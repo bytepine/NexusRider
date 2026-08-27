@@ -48,9 +48,12 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 | Scan interval | `5` s | Periodic discovery; applied immediately after save |
 | Write gate | `destructive` | `off` / `destructive` (delete, rename, stop PIE) / `all` |
 | Allow LAN | off | Bind MCP to `0.0.0.0`; generated config uses this machine's LAN IP |
-| Remote UE | (empty) | One `host:mcpPort token` per line; no subnet scan |
+| Require MCP auth | on | Off: AI clients need no Bearer (legacy proxy); UE WS auth still follows the editor |
+| Extra auth tokens | (empty) | Tokens from other machines; local UE reads the file automatically |
+| Machine auth token | (read-only) | Shared on this PC; **Copy** writes the token only |
+| Remote UE | (empty) | One `host:mcpPort [token...]` per line; no subnet scan |
 
-Cross-machine: [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md).
+Cross-machine and auth: [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md).
 
 The panel has **Streamable HTTP** / **SSE** buttons that generate copy-paste JSON for AI clients.
 
@@ -69,7 +72,7 @@ Click to switch instances. A single instance auto-connects; multiple instances p
 
 Default `http://127.0.0.1:6800/stream`. On collision the port advances; use the startup notice or settings panel. Bound to `127.0.0.1`.
 
-**Cursor** (`~/.cursor/mcp.json`). Copy the snippet (including token) from the settings panel:
+**Cursor** (`~/.cursor/mcp.json`). Copy the token from the settings panel **Copy** next to the machine token. Multiple tokens: `Bearer <tok1>, <tok2>`. If **Require MCP auth** is off, omit `headers`. See [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-鉴权).
 
 ```json
 {

@@ -48,9 +48,12 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | 扫描间隔 | `5` 秒 | 定时发现间隔；保存后立即生效 |
 | 写操作门控 | `destructive` | `off` / `destructive`（删除、重命名、停 PIE）/ `all` |
 | 允许局域网接入 | 关 | MCP 绑 `0.0.0.0`；复制配置时填本机网卡 IP |
-| 远程 UE | （空） | 每行 `host:mcpPort token`，不扫网段 |
+| 启用 MCP 鉴权 | 开 | 关闭后 AI 连本插件无需 Bearer（同旧版）；连 UE 仍看对方鉴权 |
+| 额外鉴权 Token | （空） | 其他机器 token；本机 UE 自动读文件 |
+| 本机鉴权 Token | （只读） | 同机共享；旁有「复制」只写入 token |
+| 远程 UE | （空） | 每行 `host:mcpPort [token...]`，不扫网段 |
 
-跨机见 [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
+跨机与鉴权见 [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
 
 设置面板提供「Streamable HTTP 配置」「SSE 配置」按钮，生成可复制的 AI 客户端 JSON。
 
@@ -69,7 +72,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 默认 `http://127.0.0.1:6800/stream`。端口被占用会顺延，以启动通知或设置面板为准。绑定 `127.0.0.1`。
 
-**Cursor**（`~/.cursor/mcp.json`）。Token 从设置面板「复制」取得：
+**Cursor**（`~/.cursor/mcp.json`）。Token 用设置面板 **本机 Token** 旁的「复制」。可写多个：`Bearer <tok1>, <tok2>`。关闭「启用 MCP 鉴权」时可不带 `headers`。规则见 [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-鉴权)。
 
 ```json
 {

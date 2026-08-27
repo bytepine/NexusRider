@@ -49,9 +49,7 @@ class NexusLinkConfigurable : Configurable {
 
     override fun createComponent(): JComponent {
         val st = NexusLinkSettings.instance.state
-        if (st.proxyToken.isBlank()) {
-            st.proxyToken = NexusMcpAuth.generateToken()
-        }
+        st.proxyToken = NexusMcpAuth.loadOrCreateMachineToken(st.proxyToken)
         dialogPanel = buildPanel()
         return dialogPanel!!
     }
@@ -113,7 +111,7 @@ class NexusLinkConfigurable : Configurable {
                     .bindSelected(state::enabled)
                 checkBox("允许局域网接入")
                     .bindSelected(state::listenLan)
-                    .comment("默认关（仅 127.0.0.1）。勾选后 MCP 绑 0.0.0.0，远程 AI 可用本机网卡 IP + Bearer 连接。勿映射到公网。")
+                    .comment("默认关（仅 127.0.0.1）。勾选后 MCP 绑 0.0.0.0，远程 AI 可用本机网卡 IP 连接。勿映射到公网。")
             }
 
             // ── 服务器端口 ──────────────────────────────────────────
@@ -147,7 +145,7 @@ class NexusLinkConfigurable : Configurable {
                     textArea()
                         .bindText(state::remoteUnrealText)
                         .align(AlignX.FILL)
-                    comment("每行 host:mcpPort token（从 UE 设置面板复制 token）。不扫网段。")
+                    comment("每行 host:mcpPort [token...]（token 可省略或填多个）。本机 UE 无需配置，自动读 mcp-auth-token。")
                 }
             }
 
@@ -159,6 +157,31 @@ class NexusLinkConfigurable : Configurable {
                             { v -> state.writeGate = v ?: "destructive" },
                         )
                     comment("off 不确认；destructive（默认）删除/重命名/停 PIE；all 所有写操作。")
+                }
+            }
+
+            group("鉴权") {
+                row {
+                    checkBox("启用 MCP 鉴权")
+                        .bindSelected(state::requireAuth)
+                        .comment("默认开。关闭后 AI 连本插件无需 Bearer（同旧版）；连 UE 仍按对方 /status.authRequired。")
+                }
+                row("本机 Token:") {
+                    cell(JBTextField(state.proxyToken).apply { isEditable = false })
+                        .align(AlignX.FILL)
+                    button("复制") {
+                        val token = NexusMcpAuth.loadOrCreateMachineToken(
+                            NexusLinkSettings.instance.state.proxyToken,
+                        )
+                        NexusLinkSettings.instance.state.proxyToken = token
+                        CopyPasteManager.getInstance().setContents(StringSelection(token))
+                    }
+                }.comment("同机 UE / Desktop / VSCode 共用；按钮只复制 token 本身")
+                row("额外 Token:") {
+                    textArea()
+                        .bindText(state::extraAuthTokens)
+                        .align(AlignX.FILL)
+                    comment("其他机器的 token，每行一个或逗号分隔。AI Bearer 与连远程 UE 均可使用。")
                 }
             }
 
@@ -197,48 +220,53 @@ class NexusLinkConfigurable : Configurable {
     }
 
     /** 生成 Streamable HTTP（/stream）配置片段。 */
-    private fun buildStreamConfig(port: Int, host: String = LanHost.LOOPBACK): String = """
+    private fun buildStreamConfig(port: Int, host: String = LanHost.LOOPBACK): String {
+        val headers = mcpAuthHeaders()
+        return """
 # ── CodeBuddy / Windsurf ──────────────────────────────────
 # 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
 "Nexus": {
   "url": "http://$host:$port/stream",
   "transportType": "streamable-http",
   "description": "NexusLink MCP Server for Unreal Engine",
-  "disabled": false,
-  "headers": {
-    "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
-  }
+  "disabled": false$headers
 }
 
 # ── Cursor ────────────────────────────────────────────────
 # 配置路径：~/.cursor/mcp.json → mcpServers 节点下
 "nexus-unreal": {
-  "url": "http://$host:$port/stream",
-  "headers": {
-    "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
-  }
+  "url": "http://$host:$port/stream"$headers
 }
-    """.trimIndent()
+        """.trimIndent()
+    }
 
     /** 生成 SSE（/sse）配置片段。 */
-    private fun buildSseConfig(port: Int, host: String = LanHost.LOOPBACK): String = """
+    private fun buildSseConfig(port: Int, host: String = LanHost.LOOPBACK): String {
+        val headers = mcpAuthHeaders()
+        return """
 # ── CodeBuddy / Windsurf ──────────────────────────────────
 # 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
 "Nexus": {
   "url": "http://$host:$port/sse",
-  "disabled": false,
-  "headers": {
-    "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
-  }
+  "disabled": false$headers
 }
 
 # ── Cursor ────────────────────────────────────────────────
 # 配置路径：~/.cursor/mcp.json → mcpServers 节点下
 "nexus-unreal": {
-  "url": "http://$host:$port/sse",
-  "headers": {
-    "Authorization": "Bearer ${NexusLinkSettings.instance.state.proxyToken}"
-  }
+  "url": "http://$host:$port/sse"$headers
 }
-    """.trimIndent()
+        """.trimIndent()
+    }
+
+    private fun mcpAuthHeaders(): String {
+        val st = NexusLinkSettings.instance.state
+        if (!st.requireAuth) return ""
+        val tokens = NexusMcpAuth.parseAuthTokens(st.proxyToken, st.extraAuthTokens)
+        if (tokens.isEmpty()) return ""
+        return """,
+  "headers": {
+    "Authorization": "Bearer ${tokens.joinToString(", ")}"
+  }"""
+    }
 }

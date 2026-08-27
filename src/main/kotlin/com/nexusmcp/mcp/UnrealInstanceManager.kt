@@ -31,6 +31,8 @@ data class UnrealInstanceInfo(
     /** UE 工具列表暴露模式（历史字段），供状态探测；代理侧仅暴露 list/connect。 */
     val toolsListMode: String = "starter",
     val authToken: String = "",
+    /** /status.authRequired；旧版无此字段则为 false，跳过 WS auth。 */
+    val authRequired: Boolean = false,
 )
 
 /**
@@ -335,11 +337,19 @@ class UnrealInstanceManager {
     fun isConnectedInfo(info: UnrealInstanceInfo): Boolean =
         connectedPort > 0 && LanHost.instanceKey(info.host, info.port) == LanHost.instanceKey(connectedHost, connectedPort)
 
-    private fun tokenFor(host: String, port: Int): String {
+    private fun tokensFor(host: String, port: Int): List<String> {
         val h = LanHost.normalizeHost(host)
-        if (h == LanHost.LOOPBACK) return NexusMcpAuth.readUeAuthToken(port).orEmpty()
-        return remoteUnreal.find { it.host == h && it.mcpPort == port }?.authToken.orEmpty()
+        if (h == LanHost.LOOPBACK) {
+            return NexusMcpAuth.parseAuthTokens(
+                NexusMcpAuth.readUeAuthToken(port).orEmpty(),
+                NexusMcpAuth.readMachineAuthToken().orEmpty(),
+            )
+        }
+        val entry = remoteUnreal.find { it.host == h && it.mcpPort == port }?.authToken.orEmpty()
+        return NexusMcpAuth.parseAuthTokens(entry, NexusLinkSettings.instance.state.extraAuthTokens)
     }
+
+    private fun tokenFor(host: String, port: Int): String = tokensFor(host, port).firstOrNull().orEmpty()
 
     /**
      * 通过 WebSocket 连接到指定端口的 UE 实例。
@@ -405,15 +415,20 @@ class UnrealInstanceManager {
 
             // 握手后再确认 isOpen，排除握手完成但随即被对端关闭的竞态
             if (success && wsClient?.isOpen == true) {
-                val token = info.authToken.ifBlank { tokenFor(targetHost, port) }
-                val authOutcome = sendWsRequestUnlocked("auth", JSONObject().put("token", token), 3000)
-                val authOk = authOutcome.status == WsRequestStatus.OK &&
-                    authOutcome.response?.optJSONObject("result")?.optBoolean("ok") == true
-                if (!authOk) {
-                    log.warn("WebSocket auth 失败（端口 $port）")
-                    wsClient?.close()
-                    wsClient = null
-                    return false
+                if (info.authRequired) {
+                    var authOk = false
+                    for (token in tokensFor(targetHost, port)) {
+                        val authOutcome = sendWsRequestUnlocked("auth", JSONObject().put("token", token), 3000)
+                        authOk = authOutcome.status == WsRequestStatus.OK &&
+                            authOutcome.response?.optJSONObject("result")?.optBoolean("ok") == true
+                        if (authOk) break
+                    }
+                    if (!authOk) {
+                        log.warn("WebSocket auth 失败（端口 $port）")
+                        wsClient?.close()
+                        wsClient = null
+                        return false
+                    }
                 }
                 connectedPort = port
                 connectedHost = targetHost
@@ -554,38 +569,46 @@ class UnrealInstanceManager {
         val info = instances.find { it.port == port && LanHost.normalizeHost(it.host) == h }
             ?: probeStatus(port, h, tokenFor(h, port).ifBlank { null })
             ?: return WsRequestOutcome.disconnected()
-        val authId = idCounter.getAndIncrement()
+        val needAuth = info.authRequired
+        val tokens = tokensFor(info.host, port)
+        var authIdx = 0
+        var currentAuthId = idCounter.getAndIncrement()
         val callId = idCounter.getAndIncrement()
-        val token = info.authToken.ifBlank { tokenFor(info.host, port) }
-        val authRequest = JSONObject().apply {
-            put("jsonrpc", "2.0")
-            put("id", authId)
-            put("method", "auth")
-            put("params", JSONObject().put("token", token))
-        }
         val request = JSONObject().apply {
             put("jsonrpc", "2.0")
             put("id", callId)
             put("method", "tools/call")
             put("params", params)
         }
+        fun authJson(id: Int, tok: String) = JSONObject().apply {
+            put("jsonrpc", "2.0")
+            put("id", id)
+            put("method", "auth")
+            put("params", JSONObject().put("token", tok))
+        }
 
         val latch = CountDownLatch(1)
         val holder = arrayOfNulls<String>(1)
         var oneShot: WebSocketClient? = null
-        var authed = false
+        var authed = !needAuth
         return try {
             oneShot = object : WebSocketClient(URI("ws://${info.host}:${info.wsPort}")) {
                 override fun onOpen(handshakedata: ServerHandshake?) {
-                    send(authRequest.toString())
+                    if (!needAuth) send(request.toString())
+                    else if (tokens.isEmpty()) latch.countDown()
+                    else send(authJson(currentAuthId, tokens[0]).toString())
                 }
                 override fun onMessage(message: String) {
                     try {
                         val json = JSONObject(message)
                         val rid = json.optInt("id", -1)
-                        if (!authed && rid == authId) {
+                        if (needAuth && !authed && rid == currentAuthId) {
                             authed = json.optJSONObject("result")?.optBoolean("ok") == true
-                            if (authed) send(request.toString()) else latch.countDown()
+                            if (authed) send(request.toString())
+                            else if (++authIdx < tokens.size) {
+                                currentAuthId = idCounter.getAndIncrement()
+                                send(authJson(currentAuthId, tokens[authIdx]).toString())
+                            } else latch.countDown()
                             return
                         }
                         if (rid == callId) {
@@ -669,6 +692,7 @@ class UnrealInstanceManager {
                 netRole = json.optString("netRole", ""),
                 toolsListMode = json.optString("toolsListMode", "starter"),
                 authToken = tokenOverride ?: if (probeHost == LanHost.LOOPBACK) NexusMcpAuth.readUeAuthToken(port).orEmpty() else "",
+                authRequired = json.optBoolean("authRequired", false),
             )
         } catch (_: Exception) {
             null

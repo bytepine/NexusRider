@@ -23,17 +23,16 @@ object LanHost {
 
     fun instanceKey(host: String?, port: Int): String = "${normalizeHost(host)}:$port"
 
-    /** 每行 `host:mcpPort token`；忽略本机 loopback。 */
+    /** 每行 `host:mcpPort [token...]`；忽略本机 loopback。token 可省略（用 extraAuthTokens）。 */
     fun parseRemoteText(text: String): List<RemoteUnreal> {
         return text.lineSequence().mapNotNull { line ->
             val t = line.trim()
             if (t.isEmpty() || t.startsWith("#")) return@mapNotNull null
             val sp = t.indexOf(' ')
-            if (sp <= 0) return@mapNotNull null
-            val addr = t.substring(0, sp).trim()
-            val token = t.substring(sp + 1).trim()
+            val addr = if (sp <= 0) t else t.substring(0, sp).trim()
+            val token = if (sp <= 0) "" else t.substring(sp + 1).trim()
             val colon = addr.lastIndexOf(':')
-            if (colon <= 0 || token.isEmpty()) return@mapNotNull null
+            if (colon <= 0) return@mapNotNull null
             val host = normalizeHost(addr.substring(0, colon))
             val port = addr.substring(colon + 1).toIntOrNull() ?: return@mapNotNull null
             if (host == LOOPBACK || port < 1024 || port > 65535) return@mapNotNull null

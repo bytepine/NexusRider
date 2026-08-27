@@ -43,9 +43,7 @@ class NexusLinkStartupActivity : ProjectActivity {
          */
         fun startServer(project: Project) {
             val settings = NexusLinkSettings.instance.state
-            if (settings.proxyToken.isBlank()) {
-                settings.proxyToken = NexusMcpAuth.generateToken()
-            }
+            settings.proxyToken = NexusMcpAuth.loadOrCreateMachineToken(settings.proxyToken)
 
             if (!settings.enabled) {
                 log.info("Nexus MCP 服务器已禁用，跳过启动")

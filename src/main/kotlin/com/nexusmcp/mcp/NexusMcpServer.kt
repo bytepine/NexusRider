@@ -168,7 +168,8 @@ private class McpHttpHandler(
             return
         }
         val presented = NexusMcpAuth.extractBearer(request.headers().get(HttpHeaderNames.AUTHORIZATION))
-        if (!NexusMcpAuth.tokensEqual(presented, proxyToken)) {
+        val st = NexusLinkSettings.instance.state
+        if (st.requireAuth && !NexusMcpAuth.isTokenAccepted(presented, proxyToken, st.extraAuthTokens)) {
             sendResponse(ctx, HttpResponseStatus.UNAUTHORIZED, """{"error":"Missing or invalid Authorization: Bearer token"}""")
             return
         }

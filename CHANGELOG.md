@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- feat(ui): 设置面板展示本机鉴权 Token，旁加「复制」仅写入 token
+
+### Changed
+
+- feat(mcp): 鉴权 token 改为本机唯一，与 UE / Desktop / VSCode 共用 `NexusLink/mcp-auth-token`；新增「启用 MCP 鉴权」（默认开）；额外 Token 与 Bearer 逗号分隔支持多 token；连本机 UE 自动读 token 文件；README 鉴权说明指向 usage-guide §1.1
+
 ## [2.0.0-beta.2] - 2026-08-26
 
 > ⚠️ Pre-release，非生产环境使用。

@@ -35,7 +35,11 @@ class NexusLinkSettings : PersistentStateComponent<NexusLinkSettings.State> {
         var proxyToken: String = "",
         /** MCP HTTP 绑 0.0.0.0，允许局域网 AI 客户端。 */
         var listenLan: Boolean = false,
-        /** 远程 UE：每行 host:mcpPort token。 */
+        /** AI 连本代理是否校验 Bearer；默认开。关闭后与旧版代理相同。 */
+        var requireAuth: Boolean = true,
+        /** 额外鉴权 token（其他机器），每行或逗号分隔。 */
+        var extraAuthTokens: String = "",
+        /** 远程 UE：每行 host:mcpPort [token...]。 */
         var remoteUnrealText: String = "",
     )
 
