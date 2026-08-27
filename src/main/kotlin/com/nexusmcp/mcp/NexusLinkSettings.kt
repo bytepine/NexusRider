@@ -37,7 +37,7 @@ class NexusLinkSettings : PersistentStateComponent<NexusLinkSettings.State> {
         var listenLan: Boolean = false,
         /** AI 连本代理是否校验 Bearer；默认开。关闭后与旧版代理相同。 */
         var requireAuth: Boolean = true,
-        /** 额外鉴权 token（其他机器），每行或逗号分隔。 */
+        /** 额外鉴权 token（其他机器）；UI 逐条添加，落盘为换行分隔。 */
         var extraAuthTokens: String = "",
         /** 远程 UE：每行 host:mcpPort [token...]。 */
         var remoteUnrealText: String = "",

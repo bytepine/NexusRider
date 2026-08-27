@@ -49,7 +49,7 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 | Write gate | `destructive` | `off` / `destructive` (delete, rename, stop PIE) / `all` |
 | Allow LAN | off | Bind MCP to `0.0.0.0`; generated config uses this machine's LAN IP |
 | Require MCP auth | on | Off: AI clients need no Bearer (legacy proxy); UE WS auth still follows the editor |
-| Extra auth tokens | (empty) | Tokens from other machines; local UE reads the file automatically |
+| Extra auth tokens | (empty) | Add via **+**; local UE reads the file automatically |
 | Machine auth token | (read-only) | Shared on this PC; **Copy** writes the token only |
 | Remote UE | (empty) | One `host:mcpPort [token...]` per line; no subnet scan |
 

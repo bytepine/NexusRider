@@ -49,7 +49,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | 写操作门控 | `destructive` | `off` / `destructive`（删除、重命名、停 PIE）/ `all` |
 | 允许局域网接入 | 关 | MCP 绑 `0.0.0.0`；复制配置时填本机网卡 IP |
 | 启用 MCP 鉴权 | 开 | 关闭后 AI 连本插件无需 Bearer（同旧版）；连 UE 仍看对方鉴权 |
-| 额外鉴权 Token | （空） | 其他机器 token；本机 UE 自动读文件 |
+| 额外鉴权 Token | （空） | 点 + 逐条添加其他机器 token；本机 UE 自动读文件 |
 | 本机鉴权 Token | （只读） | 同机共享；旁有「复制」只写入 token |
 | 远程 UE | （空） | 每行 `host:mcpPort [token...]`，不扫网段 |
 

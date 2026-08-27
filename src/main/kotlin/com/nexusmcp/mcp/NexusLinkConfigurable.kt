@@ -7,6 +7,8 @@ import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.ui.ToolbarDecorator
+import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.Cell
@@ -16,11 +18,14 @@ import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.concurrency.AppExecutorUtil
+import com.intellij.util.ui.JBUI
 import java.awt.Font
 import java.awt.datatransfer.StringSelection
+import javax.swing.DefaultListModel
 import javax.swing.JComponent
 import javax.swing.JScrollPane
 import javax.swing.JTextArea
+import javax.swing.ListSelectionModel
 
 /**
  * Rider 设置面板 —— Tools > Nexus MCP。
@@ -32,6 +37,13 @@ class NexusLinkConfigurable : Configurable {
 
     /** MCP 端口输入框引用，生成配置时读取实时值，避免使用面板创建时的快照。 */
     private var mcpPortCell: Cell<JBTextField>? = null
+
+    private val extraTokenModel = DefaultListModel<String>()
+    private val extraTokenList = JBList(extraTokenModel).apply {
+        selectionMode = ListSelectionModel.SINGLE_SELECTION
+        emptyText.text = "点击 + 添加其他机器的 token"
+        visibleRowCount = 3
+    }
 
     /** 配置预览区域，点击按钮后填入对应格式配置，供用户复制。 */
     private val configPreview = JTextArea(8, 60).apply {
@@ -51,11 +63,13 @@ class NexusLinkConfigurable : Configurable {
     override fun createComponent(): JComponent {
         val st = NexusLinkSettings.instance.state
         st.proxyToken = NexusMcpAuth.loadOrCreateMachineToken(st.proxyToken)
+        reloadExtraTokens()
         dialogPanel = buildPanel()
         return dialogPanel!!
     }
 
-    override fun isModified() = dialogPanel?.isModified() == true
+    override fun isModified() =
+        dialogPanel?.isModified() == true || extraTokensFromUi() != extraTokensFromState()
 
     override fun apply() {
         val state = NexusLinkSettings.instance.state
@@ -68,6 +82,7 @@ class NexusLinkConfigurable : Configurable {
         val prevRequireAuth = state.requireAuth
         val prevRemote = state.remoteUnrealText
         dialogPanel?.apply()
+        state.extraAuthTokens = extraTokensFromUi().joinToString("\n")
         val enteredDanger = state.listenLan && !state.requireAuth && !(prevListenLan && !prevRequireAuth)
         if (enteredDanger) {
             val ok = Messages.showYesNoDialog(
@@ -112,11 +127,41 @@ class NexusLinkConfigurable : Configurable {
 
     override fun reset() {
         dialogPanel?.reset()
+        reloadExtraTokens()
     }
 
     override fun disposeUIResources() {
         dialogPanel = null
         mcpPortCell = null
+        extraTokenModel.clear()
+    }
+
+    private fun extraTokensFromState(): List<String> =
+        NexusMcpAuth.parseAuthTokens(NexusLinkSettings.instance.state.extraAuthTokens)
+
+    private fun extraTokensFromUi(): List<String> =
+        (0 until extraTokenModel.size()).map { extraTokenModel.getElementAt(it) }
+
+    private fun reloadExtraTokens() {
+        extraTokenModel.clear()
+        extraTokensFromState().forEach { extraTokenModel.addElement(it) }
+    }
+
+    private fun addExtraTokensFromInput() {
+        val text = Messages.showInputDialog(
+            "粘贴其他机器的 token（多个会按逗号/分号自动拆开）",
+            "添加 Token",
+            null,
+        ) ?: return
+        val parsed = NexusMcpAuth.parseAuthTokens(text)
+        if (parsed.isEmpty()) {
+            Messages.showErrorDialog("不是有效的鉴权 token（32–128 位十六进制）。", "Nexus MCP")
+            return
+        }
+        val existing = extraTokensFromUi().toHashSet()
+        parsed.forEach { t ->
+            if (existing.add(t)) extraTokenModel.addElement(t)
+        }
     }
 
     private fun buildPanel(): DialogPanel {
@@ -196,10 +241,16 @@ class NexusLinkConfigurable : Configurable {
                     }
                 }.comment("同机 UE / Desktop / VSCode 共用；按钮只复制 token 本身")
                 row("额外 Token:") {
-                    textArea()
-                        .bindText(state::extraAuthTokens)
-                        .align(AlignX.FILL)
-                    comment("其他机器的 token，每行一个或逗号分隔。AI Bearer 与连远程 UE 均可使用。")
+                    val listPanel = ToolbarDecorator.createDecorator(extraTokenList)
+                        .setAddAction { _ -> addExtraTokensFromInput() }
+                        .setRemoveAction { _ ->
+                            val i = extraTokenList.selectedIndex
+                            if (i >= 0) extraTokenModel.remove(i)
+                        }
+                        .createPanel()
+                    listPanel.preferredSize = JBUI.size(420, 92)
+                    cell(listPanel).align(AlignX.FILL)
+                    comment("点 + 逐条添加；粘贴多个会自动拆开。本机 token 无需再填。")
                 }
             }
 
