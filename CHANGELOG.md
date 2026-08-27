@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+## [2.0.0-beta.3] - 2026-08-27
+
+> ⚠️ Pre-release，非生产环境使用。
+
 ### Added
 
 - feat(ui): 设置面板展示本机鉴权 Token，旁加「复制」仅写入 token
