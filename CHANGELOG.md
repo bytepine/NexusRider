@@ -7,56 +7,31 @@
 
 ## [Unreleased]
 
-### Changed
-
-- ui: 额外鉴权 Token 改为列表 + 添加/删除，不再手写分号或逗号分隔
-
-## [2.0.0-beta.3] - 2026-08-27
-
-> ⚠️ Pre-release，非生产环境使用。
-
-### Added
-
-- feat(ui): 设置面板展示本机鉴权 Token，旁加「复制」仅写入 token
-
-### Changed
-
-- feat(mcp): 鉴权 token 改为本机唯一，与 UE / Desktop / VSCode 共用 `NexusLink/mcp-auth-token`；新增「启用 MCP 鉴权」（默认开）；额外 Token 与 Bearer 逗号分隔支持多 token；连本机 UE 自动读 token 文件；生成 MCP 配置时多网卡可选 IP，Bearer 仅本机 token；LAN 且关鉴权时确认；README 鉴权说明指向 usage-guide §1.1
-
-## [2.0.0-beta.2] - 2026-08-26
-
-> ⚠️ Pre-release，非生产环境使用。
-
-### Added
-
-- feat(mcp): 允许局域网接入 + 远程 UE 列表（`host:mcpPort token`）；实例主键 `host:port`
-
-### Security
-
-- 默认仍绑 loopback；`plugin.xml` 改为默认 loopback、可选局域网
-
-## [2.0.0-beta.1] - 2026-08-21
-
-> ⚠️ Pre-release，非生产环境使用。
-
 ### Added
 
 - feat(mcp): 代理会话层——TTL/section 读缓存、断线 `degraded` 快照、写门控（设置「写操作门控」）、状态栏暂停/恢复 Agent 转发与最近调用显示；超大响应落盘临时目录
+- feat(mcp): 允许局域网接入 + 远程 UE 列表（`host:mcpPort token`）；实例主键 `host:port`
+- feat(ui): 设置面板展示本机鉴权 Token，旁加「复制」仅写入 token
 
 ### Changed
 
 - perf(mcp): `handleInitialize` 的连接状态文案改为固定句（以 tools/list 为准），避免随 WS 通断打穿 `cache_control: ephemeral`
 - docs: README 改为本产品落地页（安装/设置/FAQ）；全家桶端口与开关矩阵改链 NexusLink `docs/usage-guide.md`
+- feat(mcp): 鉴权 token 改为本机唯一，与 UE / Desktop / VSCode 共用 `NexusLink/mcp-auth-token`；新增「启用 MCP 鉴权」（默认开）；额外 Token 与 Bearer 逗号分隔支持多 token；连本机 UE 自动读 token 文件；生成 MCP 配置时多网卡可选 IP，Bearer 仅本机 token；LAN 且关鉴权时确认；README 鉴权说明指向 usage-guide §1.1
+- ui: 额外鉴权 Token 改为列表 + 添加/删除，不再手写分号或逗号分隔
+
+### Fixed
+
+- fix(mcp): 保存 MCP 端口后立即重启监听；扫描区间/间隔保存后立即重建发现任务
+- fix(proxy): 写门控超时判 DENY 后取消弹窗 future，不再占着线程池并可能事后再弹一次
+- refactor(mcp): HTTP body 上限统一取 `NexusMcpAuth.MAX_BODY_BYTES`，不再在 Netty pipeline 里重复写字面量
 
 ### Security
 
 - MCP `/stream` 须 Bearer 且拒绝 Origin；去掉 CORS `*`
 - 连 UE 时读实例注册表 token，WebSocket 首帧 `auth`；`GET /status` 不跟随重定向
 - `exceptionCaught` 改为结构化 JSON，不再拼接异常原文
-
-### Fixed
-
-- fix(mcp): 保存 MCP 端口后立即重启监听；扫描区间/间隔保存后立即重建发现任务
+- 默认仍绑 loopback；`plugin.xml` 改为默认 loopback、可选局域网
 
 ## [1.4.5] - 2026-07-17
 

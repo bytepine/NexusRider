@@ -85,7 +85,7 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
                     override fun initChannel(ch: SocketChannel) {
                         ch.pipeline().apply {
                             addLast(HttpServerCodec())
-                            addLast(HttpObjectAggregator(1024 * 1024))
+                            addLast(HttpObjectAggregator(NexusMcpAuth.MAX_BODY_BYTES))
                             addLast(McpHttpHandler(sessions, mgr, executor, sse, proxyToken) { sendToolsChangedNotification() })
                         }
                     }

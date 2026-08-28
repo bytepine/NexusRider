@@ -97,12 +97,15 @@ class ProxySessionHub {
             if (info.capability in alwaysAllow) return GateDecision.ALLOW
         }
         val prompter = gatePrompter ?: return GateDecision.ALLOW
+        val future = CompletableFuture.supplyAsync { prompter(info) }
         val decision = try {
-            val future = CompletableFuture.supplyAsync { prompter(info) }
             future.get(ProxySessionPolicy.GATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
+            // 超时判 DENY 后要取消 future，否则弹窗任务会一直占着线程池并可能事后再弹
+            future.cancel(true)
             GateDecision.DENY
         } catch (_: Exception) {
+            future.cancel(true)
             GateDecision.DENY
         }
         if (decision == GateDecision.ALWAYS) {
