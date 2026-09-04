@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-04
+
+### Changed
+
+- ui: 设置面板「接入 AI 客户端」按协议（Streamable HTTP / SSE）× 客户端（Cursor / CodeBuddy）一次只生成一份片段，复制不再混入另一客户端
+
 ## [2.0.0] - 2026-08-31
 
 ### Added

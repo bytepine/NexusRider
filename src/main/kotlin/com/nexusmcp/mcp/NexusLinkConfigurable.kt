@@ -53,9 +53,18 @@ class NexusLinkConfigurable : Configurable {
         text = PLACEHOLDER
     }
 
+    /** 当前选中的传输协议与客户端；点任一轴按钮后按组合生成一份片段。 */
+    private var protocol = PROTO_STREAM
+    private var clientKind = CLIENT_CURSOR
+    private var lastCopyHost: String? = null
+
     companion object {
         /** 面板未生成配置时的占位提示文本，复制按钮需跳过此内容。 */
-        private const val PLACEHOLDER = "← 点击左侧按钮生成对应配置"
+        private const val PLACEHOLDER = "← 选择协议与客户端后生成对应配置"
+        private const val PROTO_STREAM = "stream"
+        private const val PROTO_SSE = "sse"
+        private const val CLIENT_CURSOR = "cursor"
+        private const val CLIENT_CODEBUDDY = "codebuddy"
     }
 
     override fun getDisplayName() = "Nexus MCP"
@@ -134,6 +143,10 @@ class NexusLinkConfigurable : Configurable {
         dialogPanel = null
         mcpPortCell = null
         extraTokenModel.clear()
+        lastCopyHost = null
+        protocol = PROTO_STREAM
+        clientKind = CLIENT_CURSOR
+        configPreview.text = PLACEHOLDER
     }
 
     private fun extraTokensFromState(): List<String> =
@@ -259,21 +272,27 @@ class NexusLinkConfigurable : Configurable {
                 row {
                     comment(
                         "端点地址由上方「MCP 端口」决定（stream / sse）。<br>" +
-                        "点击下方按钮生成对应配置片段，按钮读取当前输入框端口值。"
+                        "选择传输协议与客户端后生成一份配置；复制只写入当前预览。"
                     )
                 }
                 row {
-                    button("Streamable HTTP 配置") {
-                        val port = mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort
-                        val host = pickCopyHost(state.listenLan) ?: return@button
-                        configPreview.text = buildStreamConfig(port, host)
-                        configPreview.caretPosition = 0
+                    button("Streamable HTTP") {
+                        protocol = PROTO_STREAM
+                        generatePreview()
                     }
-                    button("SSE 配置") {
-                        val port = mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort
-                        val host = pickCopyHost(state.listenLan) ?: return@button
-                        configPreview.text = buildSseConfig(port, host)
-                        configPreview.caretPosition = 0
+                    button("SSE") {
+                        protocol = PROTO_SSE
+                        generatePreview()
+                    }
+                }
+                row {
+                    button("Cursor") {
+                        clientKind = CLIENT_CURSOR
+                        generatePreview()
+                    }
+                    button("CodeBuddy") {
+                        clientKind = CLIENT_CODEBUDDY
+                        generatePreview()
                     }.align(AlignX.LEFT)
                     // 一键复制当前预览内容（与 VSCode copyMcpConfig 对齐；占位文本时静默 no-op）
                     button("复制") {
@@ -290,44 +309,56 @@ class NexusLinkConfigurable : Configurable {
         }
     }
 
-    /** 生成 Streamable HTTP（/stream）配置片段。 */
-    private fun buildStreamConfig(port: Int, host: String = LanHost.LOOPBACK): String {
+    /** 按当前协议 × 客户端生成一份预览；网卡 IP 在本面板会话内只选一次。 */
+    private fun generatePreview() {
+        val state = NexusLinkSettings.instance.state
+        val port = mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort
+        val host = lastCopyHost ?: pickCopyHost(state.listenLan) ?: return
+        lastCopyHost = host
+        configPreview.text = buildMcpConfig(protocol, clientKind, port, host)
+        configPreview.caretPosition = 0
+    }
+
+    /** 生成单份 MCP 客户端配置片段（协议 × 客户端）。 */
+    private fun buildMcpConfig(
+        proto: String,
+        client: String,
+        port: Int,
+        host: String = LanHost.LOOPBACK,
+    ): String {
         val headers = mcpAuthHeaders()
-        return """
+        val path = if (proto == PROTO_SSE) "sse" else "stream"
+        return if (client == CLIENT_CODEBUDDY) {
+            if (proto == PROTO_STREAM) {
+                """
 # ── CodeBuddy / Windsurf ──────────────────────────────────
 # 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
 "Nexus": {
-  "url": "http://$host:$port/stream",
+  "url": "http://$host:$port/$path",
   "transportType": "streamable-http",
   "description": "NexusLink MCP Server for Unreal Engine",
   "disabled": false$headers
 }
-
-# ── Cursor ────────────────────────────────────────────────
-# 配置路径：~/.cursor/mcp.json → mcpServers 节点下
-"nexus-unreal": {
-  "url": "http://$host:$port/stream"$headers
-}
-        """.trimIndent()
-    }
-
-    /** 生成 SSE（/sse）配置片段。 */
-    private fun buildSseConfig(port: Int, host: String = LanHost.LOOPBACK): String {
-        val headers = mcpAuthHeaders()
-        return """
+                """.trimIndent()
+            } else {
+                """
 # ── CodeBuddy / Windsurf ──────────────────────────────────
 # 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
 "Nexus": {
-  "url": "http://$host:$port/sse",
+  "url": "http://$host:$port/$path",
   "disabled": false$headers
 }
-
+                """.trimIndent()
+            }
+        } else {
+            """
 # ── Cursor ────────────────────────────────────────────────
 # 配置路径：~/.cursor/mcp.json → mcpServers 节点下
 "nexus-unreal": {
-  "url": "http://$host:$port/sse"$headers
+  "url": "http://$host:$port/$path"$headers
 }
-        """.trimIndent()
+            """.trimIndent()
+        }
     }
 
     private fun mcpAuthHeaders(): String {

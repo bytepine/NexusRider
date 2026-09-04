@@ -55,7 +55,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 跨机与鉴权见 [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
 
-设置面板提供「Streamable HTTP 配置」「SSE 配置」按钮；开 LAN 且多网卡时先选 IP。生成的 Bearer 仅本机 token。
+设置面板按传输协议（Streamable HTTP / SSE）与客户端（Cursor / CodeBuddy）各选一项，一次生成一份；开 LAN 且多网卡时先选 IP。生成的 Bearer 仅本机 token。
 
 ### 4. 状态栏
 
@@ -87,7 +87,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 }
 ```
 
-旧版 MCP 客户端可用 `http://127.0.0.1:6800/sse`。CodeBuddy / Windsurf 等片段可用设置面板一键复制。
+旧版 MCP 客户端可用 `http://127.0.0.1:6800/sse`。CodeBuddy / Windsurf 在设置面板选对应客户端后再复制。
 
 已连接时 `tools/list` 合并 UE 工具。多实例并发可在 `arguments` 中带 `targetPort`（一次性 WS，不改长连接绑定）。
 

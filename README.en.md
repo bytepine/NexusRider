@@ -55,7 +55,7 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 
 Cross-machine and auth: [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md).
 
-The panel has **Streamable HTTP** / **SSE** buttons; if LAN is on and multiple NICs exist, pick an IP first. Copied Bearer is this machine's token only.
+The panel lets you pick a transport (Streamable HTTP / SSE) and a client (Cursor / CodeBuddy) so each generate/copy is a single snippet; if LAN is on and multiple NICs exist, pick an IP first. Copied Bearer is this machine's token only.
 
 ### 4. Status bar
 
@@ -87,7 +87,7 @@ Default `http://127.0.0.1:6800/stream`. On collision the port advances; use the 
 }
 ```
 
-Legacy MCP clients can use `http://127.0.0.1:6800/sse`. Copy snippets for CodeBuddy / Windsurf from the settings panel.
+Legacy MCP clients can use `http://127.0.0.1:6800/sse`. For CodeBuddy / Windsurf, pick that client in the settings panel, then copy.
 
 When connected, `tools/list` merges UE tools. For concurrent multi-instance calls, pass `targetPort` in `arguments` (one-shot WS; does not change the long-lived binding).
 
