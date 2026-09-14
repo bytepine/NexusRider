@@ -19,7 +19,7 @@
         <a href="https://github.com/bytepine/NexusLink">NexusLink (GitHub)</a> ·
         <a href="https://github.com/bytepine/NexusLink/releases">Download (Releases)</a>.
         Install <code>nexus-mcp-unreal-*.zip</code> into your project's
-        <code>Plugins/Developer/NexusLink</code>, enable it, then turn on
+        <code>Plugins/NexusLink</code>, enable it, then turn on
         <i>Editor Preferences &gt; Plugins &gt; NexusLink &gt; Enable MCP Server</i>.</p>
 
         <p><b>Getting started:</b></p>
@@ -55,7 +55,7 @@
         <a href="https://github.com/bytepine/NexusLink">NexusLink（GitHub）</a> ·
         <a href="https://github.com/bytepine/NexusLink/releases">下载（Releases）</a>。
         将 <code>nexus-mcp-unreal-*.zip</code> 解压到项目的
-        <code>Plugins/Developer/NexusLink</code>，启用后在
+        <code>Plugins/NexusLink</code>，启用后在
         <i>Editor Preferences &gt; Plugins &gt; NexusLink &gt; Enable MCP Server</i> 勾选开启。</p>
 
         <p><b>快速开始：</b></p>
