@@ -26,8 +26,12 @@ data class UnrealInstanceInfo(
     val wsPort: Int = port + 10000,
     val projectName: String = "",
     val engineVersion: String = "",
-    /** UE 网络角色（DedicatedServer/ListenServer/Client/Standalone/Editor）。 */
+    /** UE 网络角色（DedicatedServer/ListenServer/Client/Standalone/Editor）。PIE 期间会变成 Standalone。 */
     val netRole: String = "",
+    /** 进程级宿主：Editor / Game / DedicatedServer。不随 PIE 变化；选实例优先看此项。 */
+    val hostKind: String = "",
+    /** 当前是否存在 PIE/Game World；null 表示 /status 未返回该字段。 */
+    val hasPlayWorld: Boolean? = null,
     /** UE 工具列表暴露模式（历史字段），供状态探测；代理侧仅暴露 list/connect。 */
     val toolsListMode: String = "starter",
     val authToken: String = "",
@@ -303,12 +307,18 @@ class UnrealInstanceManager {
                 preferredPort > 0 && found.any { LanHost.instanceKey(it.host, it.port) == prefKey } ->
                     found.first { LanHost.instanceKey(it.host, it.port) == prefKey }
                 else ->
-                    found.firstOrNull { it.netRole.equals("Editor", ignoreCase = true) } ?: found[0]
+                    pickEditorInstance(found)
             }
             connectTo(target.port, host = target.host)
         }
 
         found
+    }
+
+    private fun pickEditorInstance(found: List<UnrealInstanceInfo>): UnrealInstanceInfo {
+        return found.firstOrNull { it.hostKind.equals("Editor", ignoreCase = true) }
+            ?: found.firstOrNull { it.hostKind.isEmpty() && it.netRole.equals("Editor", ignoreCase = true) }
+            ?: found[0]
     }
 
     /**
@@ -690,6 +700,8 @@ class UnrealInstanceManager {
                 projectName = json.optString("projectName", ""),
                 engineVersion = json.optString("engineVersion", ""),
                 netRole = json.optString("netRole", ""),
+                hostKind = json.optString("hostKind", ""),
+                hasPlayWorld = if (json.has("hasPlayWorld")) json.optBoolean("hasPlayWorld") else null,
                 toolsListMode = json.optString("toolsListMode", "starter"),
                 authToken = tokenOverride ?: if (probeHost == LanHost.LOOPBACK) NexusMcpAuth.readUeAuthToken(port).orEmpty() else "",
                 authRequired = json.optBoolean("authRequired", false),

@@ -64,7 +64,7 @@ The panel lets you pick a transport (Streamable HTTP / SSE) and a client (Cursor
 | **⬢ project name** | Connected to UE |
 | **⬡ Nexus** | Not connected |
 
-Click to switch instances. A single instance auto-connects; multiple instances prefer `netRole=Editor`. Tool-list cache is kept across disconnects. The popup can pause/resume agent forwarding. Session contract: [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md).
+Click to switch instances. A single instance auto-connects; multiple instances prefer `hostKind=Editor` (legacy UE without that field falls back to `netRole=Editor`). Tool-list cache is kept across disconnects. The popup can pause/resume agent forwarding. Session contract: [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md).
 
 ---
 

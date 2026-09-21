@@ -64,7 +64,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | **⬢ 项目名** | 已连接 UE |
 | **⬡ Nexus** | 未连接 |
 
-点击状态栏切换实例。唯一实例自动连接；多实例优先 `netRole=Editor`。断线保留工具列表缓存，重连后刷新。弹单可暂停/恢复 Agent 转发。会话层契约见 [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md)。
+点击状态栏切换实例。唯一实例自动连接；多实例优先 `hostKind=Editor`（旧 UE 无该字段时回落 `netRole=Editor`）。断线保留工具列表缓存，重连后刷新。弹单可暂停/恢复 Agent 转发。会话层契约见 [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md)。
 
 ---
 

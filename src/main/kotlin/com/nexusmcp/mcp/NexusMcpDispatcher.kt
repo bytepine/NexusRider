@@ -366,6 +366,8 @@ class NexusMcpDispatcher(
                 put("engineVersion", info.engineVersion)
                 put("connected", unrealManager.isConnectedInfo(info) && wsOpen)
                 if (info.netRole.isNotEmpty()) put("netRole", info.netRole)
+                if (info.hostKind.isNotEmpty()) put("hostKind", info.hostKind)
+                info.hasPlayWorld?.let { put("hasPlayWorld", it) }
             })
         }
         val content = JSONArray().put(JSONObject().apply {
