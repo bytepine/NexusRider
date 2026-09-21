@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(api): 网卡选择改为 `DialogWrapper`，不再调用已废弃的 `Messages.showChooseDialog`，消除 Rider 2026.3 验证器 deprecated API 告警
+
 ## [2.1.0] - 2026-09-21
 
 ### Added

@@ -2,6 +2,8 @@
 
 package com.nexusmcp.mcp
 
+import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.Configurable
@@ -376,14 +378,20 @@ class NexusLinkConfigurable : Configurable {
     private fun pickCopyHost(listenLan: Boolean): String? {
         val (auto, choices) = LanHost.copyHostChoices(listenLan)
         if (choices.isEmpty()) return auto
-        val labels = choices.map { "${it.name} ${it.address}" }.toTypedArray()
-        val idx = Messages.showChooseDialog(
-            "选择网卡 IP（写入 mcp.json 的 url）",
-            "Nexus MCP",
-            labels,
-            labels[0],
-            null,
-        )
+        val combo = ComboBox(choices.map { "${it.name} ${it.address}" }.toTypedArray())
+        val ok = object : DialogWrapper(true) {
+            init {
+                title = "Nexus MCP"
+                init()
+            }
+            override fun createCenterPanel(): JComponent = panel {
+                row { label("选择网卡 IP（写入 mcp.json 的 url）") }
+                row { cell(combo).align(AlignX.FILL) }
+            }
+            override fun getPreferredFocusedComponent(): JComponent = combo
+        }.showAndGet()
+        if (!ok) return null
+        val idx = combo.selectedIndex
         if (idx < 0) return null
         return choices[idx].address
     }
