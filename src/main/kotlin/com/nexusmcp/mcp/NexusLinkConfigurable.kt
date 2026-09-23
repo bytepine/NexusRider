@@ -7,6 +7,7 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.ToolbarDecorator
@@ -82,6 +83,7 @@ class NexusLinkConfigurable : Configurable {
     override fun isModified() =
         dialogPanel?.isModified() == true || extraTokensFromUi() != extraTokensFromState()
 
+    @Throws(ConfigurationException::class)
     override fun apply() {
         val state = NexusLinkSettings.instance.state
         val prevEnabled = state.enabled
@@ -94,6 +96,28 @@ class NexusLinkConfigurable : Configurable {
         val prevRemote = state.remoteUnrealText
         dialogPanel?.apply()
         state.extraAuthTokens = extraTokensFromUi().joinToString("\n")
+        if (!NexusLinkSettings.isValidPort(state.mcpPort)
+            || !NexusLinkSettings.isValidPort(state.scanPortStart)
+            || !NexusLinkSettings.isValidPort(state.scanPortEnd)
+        ) {
+            state.mcpPort = prevPort
+            state.scanPortStart = prevScanStart
+            state.scanPortEnd = prevScanEnd
+            state.scanIntervalSeconds = prevInterval
+            dialogPanel?.reset()
+            throw ConfigurationException("端口须为 1024–65535 的数字")
+        }
+        if (state.scanIntervalSeconds < NexusLinkSettings.MIN_SCAN_INTERVAL_SECONDS) {
+            state.scanIntervalSeconds = prevInterval
+            dialogPanel?.reset()
+            throw ConfigurationException("扫描间隔须为不小于 1 的整数秒")
+        }
+        if (NexusLinkSettings.scanPortSpan(state.scanPortStart, state.scanPortEnd) > NexusLinkSettings.MAX_SCAN_PORT_SPAN) {
+            state.scanPortStart = prevScanStart
+            state.scanPortEnd = prevScanEnd
+            dialogPanel?.reset()
+            throw ConfigurationException("扫描区间不能超过 ${NexusLinkSettings.MAX_SCAN_PORT_SPAN} 个端口")
+        }
         val enteredDanger = state.listenLan && !state.requireAuth && !(prevListenLan && !prevRequireAuth)
         if (enteredDanger) {
             val ok = Messages.showYesNoDialog(
@@ -106,6 +130,22 @@ class NexusLinkConfigurable : Configurable {
             if (!ok) {
                 state.listenLan = prevListenLan
                 state.requireAuth = prevRequireAuth
+                dialogPanel?.reset()
+                return
+            }
+        }
+        val enteredRemote = LanHost.parseRemoteText(prevRemote).isEmpty()
+            && LanHost.parseRemoteText(state.remoteUnrealText).isNotEmpty()
+        if (enteredRemote) {
+            val ok = Messages.showYesNoDialog(
+                "连远程 UE 走明文 WebSocket，鉴权 token 可被同网段看到。确定继续？",
+                "远程 UE 明文连接",
+                "继续",
+                "取消",
+                null,
+            ) == Messages.YES
+            if (!ok) {
+                state.remoteUnrealText = prevRemote
                 dialogPanel?.reset()
                 return
             }
@@ -314,7 +354,11 @@ class NexusLinkConfigurable : Configurable {
     /** 按当前协议 × 客户端生成一份预览；网卡 IP 在本面板会话内只选一次。 */
     private fun generatePreview() {
         val state = NexusLinkSettings.instance.state
-        val port = mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort
+        val runningPort = ProjectManager.getInstance().openProjects
+            .mapNotNull { it.getUserData(NexusLinkStartupActivity.MCP_SERVER_KEY) }
+            .firstOrNull { it.isRunning }
+            ?.port
+        val port = runningPort ?: (mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort)
         val host = lastCopyHost ?: pickCopyHost(state.listenLan) ?: return
         lastCopyHost = host
         configPreview.text = buildMcpConfig(protocol, clientKind, port, host)

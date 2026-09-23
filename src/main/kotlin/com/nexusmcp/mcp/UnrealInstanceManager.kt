@@ -327,8 +327,7 @@ class UnrealInstanceManager {
      */
     private fun scanPortsParallel(): List<UnrealInstanceInfo> {
         // 防御：用户将 start/end 配置颠倒时自动交换，避免 fixedThreadPool(负数) 抛异常
-        val start = minOf(scanPortStart, scanPortEnd)
-        val end = maxOf(scanPortStart, scanPortEnd)
+        val (start, end) = NexusLinkSettings.clampScanPorts(scanPortStart, scanPortEnd)
         val pool = Executors.newFixedThreadPool(
             minOf(SCAN_THREAD_COUNT, end - start + 1)
         )

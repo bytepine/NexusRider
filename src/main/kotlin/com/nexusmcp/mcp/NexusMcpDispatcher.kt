@@ -41,6 +41,8 @@ class NexusMcpDispatcher(
     @Volatile var state = McpSessionState.WaitingForInitialize
         private set
 
+    private val alwaysAllow = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
         private const val SERVER_NAME = "Nexus-Rider"
@@ -125,6 +127,7 @@ class NexusMcpDispatcher(
      */
     @Synchronized
     private fun handleInitialize(id: Any?, params: JSONObject?): String {
+        alwaysAllow.clear()
         if (state != McpSessionState.WaitingForInitialize) {
             log.info("收到重复的 initialize 请求，重置会话状态")
             state = McpSessionState.WaitingForInitialize
@@ -250,7 +253,7 @@ class NexusMcpDispatcher(
         val callInfo = ProxySessionPolicy.parseCall(toolName, args)
         val hub = unrealManager.sessionHub
         hub.waitIfPaused()
-        val gate = hub.confirmIfNeeded(callInfo)
+        val gate = confirmWrite(callInfo)
         if (gate == GateDecision.DENY) {
             return makeError(
                 id, INTERNAL_ERROR, "Write blocked by proxy gate (user denied).",
@@ -263,6 +266,17 @@ class NexusMcpDispatcher(
         } finally {
             hub.endCall()
         }
+    }
+
+    /** 「总是允许」只记在当前 Dispatcher（一条 MCP 会话）上。 */
+    private fun confirmWrite(info: CallInfo): GateDecision {
+        if (info.capability in alwaysAllow) return GateDecision.ALLOW
+        val decision = unrealManager.sessionHub.confirmIfNeeded(info)
+        if (decision == GateDecision.ALWAYS) {
+            alwaysAllow.add(info.capability)
+            return GateDecision.ALLOW
+        }
+        return decision
     }
 
     private fun forwardRemoteCall(

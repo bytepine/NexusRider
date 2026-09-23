@@ -7,6 +7,9 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.logger
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * NexusLink 插件持久化配置。
@@ -48,10 +51,61 @@ class NexusLinkSettings : PersistentStateComponent<NexusLinkSettings.State> {
     override fun getState(): State = state
 
     override fun loadState(state: State) {
+        sanitize(state)
         this.state = state
     }
 
     companion object {
+        const val MIN_PORT = 1024
+        const val MAX_PORT = 65535
+        const val MAX_SCAN_PORT_SPAN = 200
+        const val MIN_SCAN_INTERVAL_SECONDS = 1
+
         val instance: NexusLinkSettings get() = service()
+
+        private val log = logger<NexusLinkSettings>()
+
+        fun scanPortSpan(start: Int, end: Int): Int {
+            val lo = min(start, end)
+            val hi = max(start, end)
+            return hi - lo + 1
+        }
+
+        fun clampScanPorts(start: Int, end: Int): Pair<Int, Int> {
+            var s = clampPort(start, 45000)
+            var e = clampPort(end, 45100)
+            if (s > e) {
+                val t = s; s = e; e = t
+            }
+            if (e - s + 1 > MAX_SCAN_PORT_SPAN) {
+                e = s + MAX_SCAN_PORT_SPAN - 1
+                if (e > MAX_PORT) {
+                    e = MAX_PORT
+                    s = e - MAX_SCAN_PORT_SPAN + 1
+                    if (s < MIN_PORT) s = MIN_PORT
+                }
+            }
+            return s to e
+        }
+
+        fun isValidPort(n: Int): Boolean = n in MIN_PORT..MAX_PORT
+
+        private fun clampPort(p: Int, fallback: Int): Int =
+            if (p in MIN_PORT..MAX_PORT) p else fallback
+
+        fun sanitize(c: State) {
+            if (!isValidPort(c.mcpPort)) c.mcpPort = 6800
+            if (!isValidPort(c.scanPortStart)) c.scanPortStart = 45000
+            if (!isValidPort(c.scanPortEnd)) c.scanPortEnd = 45100
+            if (c.scanIntervalSeconds < MIN_SCAN_INTERVAL_SECONDS) c.scanIntervalSeconds = 5
+            val lo = min(c.scanPortStart, c.scanPortEnd)
+            val hi = max(c.scanPortStart, c.scanPortEnd)
+            if (hi - lo + 1 > MAX_SCAN_PORT_SPAN) {
+                log.warn("UE 扫描区间 [$lo, $hi] 超过 $MAX_SCAN_PORT_SPAN 个端口，已截断")
+            }
+            val clamped = clampScanPorts(c.scanPortStart, c.scanPortEnd)
+            c.scanPortStart = clamped.first
+            c.scanPortEnd = clamped.second
+        }
     }
 }

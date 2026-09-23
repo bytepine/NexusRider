@@ -11,6 +11,10 @@ import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.codec.http.*
+import io.netty.handler.timeout.IdleState
+import io.netty.handler.timeout.IdleStateEvent
+import io.netty.handler.timeout.IdleStateHandler
+import io.netty.handler.timeout.ReadTimeoutHandler
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -57,6 +61,7 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
     companion object {
         /** 活跃会话上限：超出时淘汰最旧的非当前会话（防循环重连导致内存增长）。 */
         internal const val MAX_SESSIONS = 50
+        internal const val MAX_SSE_CLIENTS = 32
     }
 
     var port: Int = 0
@@ -84,6 +89,17 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
                 .childHandler(object : ChannelInitializer<SocketChannel>() {
                     override fun initChannel(ch: SocketChannel) {
                         ch.pipeline().apply {
+                            addLast(ReadTimeoutHandler(10))
+                            addLast(IdleStateHandler(0, 0, 60, TimeUnit.SECONDS))
+                            addLast(object : ChannelInboundHandlerAdapter() {
+                                override fun userEventTriggered(ctx: ChannelHandlerContext, evt: Any) {
+                                    if (evt is IdleStateEvent && evt.state() == IdleState.ALL_IDLE) {
+                                        ctx.close()
+                                        return
+                                    }
+                                    super.userEventTriggered(ctx, evt)
+                                }
+                            })
                             addLast(HttpServerCodec())
                             addLast(HttpObjectAggregator(NexusMcpAuth.MAX_BODY_BYTES))
                             addLast(McpHttpHandler(sessions, mgr, executor, sse, proxyToken) { sendToolsChangedNotification() })
@@ -249,6 +265,11 @@ private class McpHttpHandler(
      * 每 SSE_KEEPALIVE_MS 写一行注释帧避免经反代/NAT idle 被断开。
      */
     private fun handleGet(ctx: ChannelHandlerContext) {
+        if (sseContexts.size >= NexusMcpServer.MAX_SSE_CLIENTS) {
+            sendResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, """{"error":"too many SSE clients"}""")
+            return
+        }
+        ctx.pipeline().get(ReadTimeoutHandler::class.java)?.let { ctx.pipeline().remove(it) }
         val response = DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
         response.headers().apply {
             set(HttpHeaderNames.CONTENT_TYPE, "text/event-stream")

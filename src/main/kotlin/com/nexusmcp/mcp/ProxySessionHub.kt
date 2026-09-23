@@ -4,6 +4,8 @@ package com.nexusmcp.mcp
 
 import org.json.JSONObject
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermission
 import java.util.LinkedHashMap
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -48,13 +50,16 @@ class ProxySessionHub {
     private val pauseLock = ReentrantLock()
     private val pauseCondition = pauseLock.newCondition()
     @Volatile private var paused = false
-    private val alwaysAllow = mutableSetOf<String>()
     private val cache = object : LinkedHashMap<String, CacheEntry>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry>?): Boolean =
             size > ProxySessionPolicy.MAX_CACHE_ENTRIES
     }
     private val cacheLock = Any()
     @Volatile private var activity: ActivityState? = null
+
+    init {
+        purgeOffload()
+    }
 
     fun isPaused(): Boolean = paused
 
@@ -93,12 +98,9 @@ class ProxySessionHub {
 
     fun confirmIfNeeded(info: CallInfo): GateDecision {
         if (!ProxySessionPolicy.needsGate(writeGate, info.capability, info.innerArgs)) return GateDecision.ALLOW
-        synchronized(alwaysAllow) {
-            if (info.capability in alwaysAllow) return GateDecision.ALLOW
-        }
         val prompter = gatePrompter ?: return GateDecision.ALLOW
         val future = CompletableFuture.supplyAsync { prompter(info) }
-        val decision = try {
+        return try {
             future.get(ProxySessionPolicy.GATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
             // 超时判 DENY 后要取消 future，否则弹窗任务会一直占着线程池并可能事后再弹
@@ -108,11 +110,6 @@ class ProxySessionHub {
             future.cancel(true)
             GateDecision.DENY
         }
-        if (decision == GateDecision.ALWAYS) {
-            synchronized(alwaysAllow) { alwaysAllow.add(info.capability) }
-            return GateDecision.ALLOW
-        }
-        return decision
     }
 
     fun lookupFresh(info: CallInfo, nowMs: Long): CacheHit? {
@@ -180,10 +177,20 @@ class ProxySessionHub {
     }
 
     private fun offload(result: JSONObject): JSONObject {
-        val dir = File(System.getProperty("java.io.tmpdir"), "nexus-mcp-offload")
+        pruneOffload()
+        val dir = offloadRoot
         dir.mkdirs()
+        tryPosix(dir, setOf(
+            PosixFilePermission.OWNER_READ,
+            PosixFilePermission.OWNER_WRITE,
+            PosixFilePermission.OWNER_EXECUTE,
+        ))
         val file = File(dir, "offload-${System.currentTimeMillis()}.json")
         file.writeText(result.toString())
+        tryPosix(file, setOf(
+            PosixFilePermission.OWNER_READ,
+            PosixFilePermission.OWNER_WRITE,
+        ))
         val meta = JSONObject()
             .put("offloaded", true)
             .put("path", file.absolutePath)
@@ -196,6 +203,30 @@ class ProxySessionHub {
     }
 
     companion object {
+        private val offloadRoot = File(System.getProperty("java.io.tmpdir"), "nexus-mcp-offload")
+        private const val OFFLOAD_MAX_AGE_MS = 3_600_000L
+
+        private fun tryPosix(file: File, perms: Set<PosixFilePermission>) {
+            try {
+                Files.setPosixFilePermissions(file.toPath(), perms)
+            } catch (_: Exception) {
+                // Windows 等无 POSIX 权限模型
+            }
+        }
+
+        private fun purgeOffload() {
+            val dir = offloadRoot
+            if (!dir.isDirectory) return
+            dir.listFiles()?.forEach { it.deleteRecursively() }
+        }
+
+        private fun pruneOffload() {
+            val cutoff = System.currentTimeMillis() - OFFLOAD_MAX_AGE_MS
+            offloadRoot.listFiles()?.forEach { f ->
+                if (f.lastModified() < cutoff) f.deleteRecursively()
+            }
+        }
+
         fun wrapCached(result: JSONObject, kind: CacheKind, snapshotAt: String): JSONObject {
             val meta = JSONObject()
                 .put("cache", if (kind == CacheKind.HIT) "hit" else "section_hit")

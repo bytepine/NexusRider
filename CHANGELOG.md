@@ -10,6 +10,11 @@
 ### Fixed
 
 - fix(api): 网卡选择改为 `DialogWrapper`，不再调用已废弃的 `Messages.showChooseDialog`，消除 Rider 2026.3 验证器 deprecated API 告警
+- fix(proxy): 写门控「本会话总是允许」只记住当前 MCP 会话里的该能力
+- fix(mcp): HTTP 读头 10s / 空闲 60s；SSE 连接上限 32
+- fix(config): UE 扫描区间宽度上限 200；设置页非法端口/间隔或过宽区间拒绝保存
+- fix(proxy): 超大响应落盘目录 0700、文件 0600；启动清残留，写入时删除超过 1 小时的旧文件
+- fix(ui): 首次配置远程 UE 时确认明文 WebSocket 会暴露 token；复制 MCP 配置使用实际监听端口
 
 ## [2.1.0] - 2026-09-21
 
