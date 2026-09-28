@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- docs: 说明和界面里的生造词改为日常说法（鉴权→身份验证，写操作门控→写入前确认）
+
 ### Fixed
 
 - fix(api): 网卡选择改为 `DialogWrapper`，不再调用已废弃的 `Messages.showChooseDialog`，消除 Rider 2026.3 验证器 deprecated API 告警

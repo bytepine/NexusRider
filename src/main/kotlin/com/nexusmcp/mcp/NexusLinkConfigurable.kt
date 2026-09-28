@@ -121,7 +121,7 @@ class NexusLinkConfigurable : Configurable {
         val enteredDanger = state.listenLan && !state.requireAuth && !(prevListenLan && !prevRequireAuth)
         if (enteredDanger) {
             val ok = Messages.showYesNoDialog(
-                "局域网可达且未鉴权时，同网段主机都能控制编辑器。确定继续？不要做公网映射。",
+                "局域网可达且没做身份验证时，同网段主机都能控制编辑器。确定继续？不要做公网映射。",
                 "Nexus MCP",
                 "继续",
                 "取消",
@@ -138,7 +138,7 @@ class NexusLinkConfigurable : Configurable {
             && LanHost.parseRemoteText(state.remoteUnrealText).isNotEmpty()
         if (enteredRemote) {
             val ok = Messages.showYesNoDialog(
-                "连远程 UE 走明文 WebSocket，鉴权 token 可被同网段看到。确定继续？",
+                "连远程 UE 走明文 WebSocket，身份验证 token 可被同网段看到。确定继续？",
                 "远程 UE 明文连接",
                 "继续",
                 "取消",
@@ -210,7 +210,7 @@ class NexusLinkConfigurable : Configurable {
         ) ?: return
         val parsed = NexusMcpAuth.parseAuthTokens(text)
         if (parsed.isEmpty()) {
-            Messages.showErrorDialog("不是有效的鉴权 token（32–128 位十六进制）。", "Nexus MCP")
+            Messages.showErrorDialog("不是有效的身份验证 token（32–128 位十六进制）。", "Nexus MCP")
             return
         }
         val existing = extraTokensFromUi().toHashSet()
@@ -267,8 +267,8 @@ class NexusLinkConfigurable : Configurable {
                 }
             }
 
-            group("写操作门控") {
-                row("门控级别:") {
+            group("写入前确认") {
+                row("确认范围:") {
                     comboBox(listOf("off", "destructive", "all"))
                         .bindItem(
                             { state.writeGate },
@@ -278,9 +278,9 @@ class NexusLinkConfigurable : Configurable {
                 }
             }
 
-            group("鉴权") {
+            group("身份验证") {
                 row {
-                    checkBox("启用 MCP 鉴权")
+                    checkBox("启用 MCP 身份验证")
                         .bindSelected(state::requireAuth)
                         .comment("默认开。关闭后 AI 连本插件无需 Bearer（同旧版）；连 UE 仍按对方 /status.authRequired。")
                 }

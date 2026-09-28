@@ -2,7 +2,7 @@
 
 **语言 / Language**: **简体中文** · [English](README.en.md)
 
-JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`），发现 UE 实例，经 WebSocket 把 AI 工具调用转发给 **NexusLink**。蓝图、资产、PIE 等能力由 UE 侧提供，本插件不实现游戏逻辑。
+JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`），发现 UE 实例，经 WebSocket 把 AI 工具调用转发给 **NexusLink**。蓝图、资产、PIE 等能力由 UE 里提供，本插件不实现游戏逻辑。
 
 四端端口与开关层数见 [NexusLink 使用指南](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。本插件是三层开关中的 IDE 层。本机不要与 NexusDesktop / VSCode 代理同时开。
 
@@ -23,7 +23,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 > **须 Open Project**：MCP 服务在 `ProjectActivity` 中启动。仅打开欢迎页、未打开项目时，即使勾选启用也不会监听。
 
-### 1. UE 前置
+### 1. 先准备好 UE
 
 1. 安装并启用 NexusLink，勾选 **启用 MCP 服务器**（步骤见 [usage-guide §2](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)）
 2. 未勾选时扫描为空，状态栏显示 **⬡ Nexus**
@@ -46,14 +46,14 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | MCP 端口 | `6800` | AI 客户端连接端口；保存后立即重启监听 |
 | 扫描端口范围 | `45000`–`45100` | UE 发现范围；保存后立即生效 |
 | 扫描间隔 | `5` 秒 | 定时发现间隔；保存后立即生效 |
-| 写操作门控 | `destructive` | `off` / `destructive`（删除、重命名、停 PIE）/ `all` |
+| 写入前确认 | `destructive` | `off` / `destructive`（删除、重命名、停 PIE）/ `all` |
 | 允许局域网接入 | 关 | MCP 绑 `0.0.0.0`；复制配置时填本机网卡 IP |
-| 启用 MCP 鉴权 | 开 | 关闭后 AI 连本插件无需 Bearer（同旧版）；连 UE 仍看对方鉴权 |
-| 额外鉴权 Token | （空） | 点 + 逐条添加其他机器 token；本机 UE 自动读文件 |
-| 本机鉴权 Token | （只读） | 同机共享；旁有「复制」只写入 token |
+| 启用 MCP 身份验证 | 开 | 关闭后 AI 连本插件无需 Bearer（同旧版）；连 UE 仍看对方身份验证 |
+| 额外身份验证 Token | （空） | 点 + 逐条添加其他机器 token；本机 UE 自动读文件 |
+| 本机身份验证 Token | （只读） | 同机共享；旁有「复制」只写入 token |
 | 远程 UE | （空） | 每行 `host:mcpPort [token...]`，不扫网段 |
 
-跨机与鉴权见 [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
+跨机与身份验证见 [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
 
 设置面板按传输协议（Streamable HTTP / SSE）与客户端（Cursor / CodeBuddy）各选一项，一次生成一份；开 LAN 且多网卡时先选 IP。生成的 Bearer 仅本机 token。
 
@@ -64,15 +64,15 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | **⬢ 项目名** | 已连接 UE |
 | **⬡ Nexus** | 未连接 |
 
-点击状态栏切换实例。唯一实例自动连接；多实例优先 `hostKind=Editor`（旧 UE 无该字段时回落 `netRole=Editor`）。断线保留工具列表缓存，重连后刷新。弹单可暂停/恢复 Agent 转发。会话层契约见 [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md)。
+点击状态栏切换实例。唯一实例自动连接；多实例优先 `hostKind=Editor`（旧 UE 无该字段时改用 `netRole=Editor`）。断线保留工具列表缓存，重连后刷新。弹出的菜单可暂停/恢复 Agent 转发。会话层约定见 [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md)。
 
 ---
 
 ## AI 客户端
 
-默认 `http://127.0.0.1:6800/stream`。端口被占用会顺延，以启动通知或设置面板为准。绑定 `127.0.0.1`。
+默认 `http://127.0.0.1:6800/stream`。端口被占用会自动换成下一个端口，以启动通知或设置面板为准。绑定 `127.0.0.1`。
 
-**Cursor**（`~/.cursor/mcp.json`）。Token 用设置面板 **本机 Token** 旁的「复制」。可写多个：`Bearer <tok1>, <tok2>`。关闭「启用 MCP 鉴权」时可不带 `headers`。规则见 [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-鉴权)。
+**Cursor**（`~/.cursor/mcp.json`）。Token 用设置面板 **本机 Token** 旁的「复制」。可写多个：`Bearer <tok1>, <tok2>`。关闭「启用 MCP 身份验证」时可不带 `headers`。规则见 [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-身份验证)。
 
 ```json
 {
@@ -101,7 +101,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 ### 多个 Rider 项目窗口
 
-MCP 按**项目**挂载。多窗口可能争用 `6800`，后续窗口顺延（`6801`…），以各窗口通知中的端口为准。
+MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗口自动换成下一个端口（`6801`…），以各窗口通知中的端口为准。
 
 ### 工具列表不刷新
 
@@ -113,7 +113,7 @@ MCP 按**项目**挂载。多窗口可能争用 `6800`，后续窗口顺延（`6
 
 ### 改了 UE 资产但磁盘未变化
 
-属 NexusLink 侧落盘行为，与本代理无关。见 [usage-guide FAQ](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
+属 NexusLink 里保存到磁盘的行为，与本代理无关。见 [usage-guide FAQ](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
 
 ---
 

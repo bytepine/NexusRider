@@ -48,7 +48,7 @@
         WebSocket 把 AI 工具调用转发给它们。AI 客户端（Cursor、CodeBuddy、Windsurf 等）只需连接
         一个固定端点，由 Rider 负责实例发现、长连接维持以及在多个 UE 实例间切换。</p>
 
-        <p>蓝图、资产、PIE 控制、材质等引擎能力由 UE 侧的 <b>NexusLink</b> 插件提供——本插件仅做
+        <p>蓝图、资产、PIE 控制、材质等引擎能力由 UE 里的 <b>NexusLink</b> 插件提供——本插件仅做
         代理，不实现游戏逻辑。</p>
 
         <p><b>需配合 UE 插件：</b>
