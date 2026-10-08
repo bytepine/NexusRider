@@ -72,7 +72,7 @@ Click to switch instances. A single instance auto-connects; multiple instances p
 
 Default `http://127.0.0.1:6800/stream`. On collision the port advances; use the startup notice or settings panel. Bound to `127.0.0.1`.
 
-**Cursor** (`~/.cursor/mcp.json`). Copy the token from the settings panel **Copy** next to the machine token. Multiple tokens: `Bearer <tok1>, <tok2>`. If **Require MCP auth** is off, omit `headers`. See [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-鉴权).
+**Cursor** (`~/.cursor/mcp.json`). Copy the token from the settings panel **Copy** next to the machine token. Multiple tokens: `Bearer <tok1>, <tok2>`. If **Require MCP auth** is off, omit `headers`. See [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-身份验证).
 
 ```json
 {
