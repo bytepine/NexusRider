@@ -171,30 +171,15 @@ class UnrealInstanceManager {
         }
     }
 
-    var scanPortStart = 45000
-    var scanPortEnd = 45100
+    var scanPortStart = ProxyTiming.SCAN_PORT_START
+    var scanPortEnd = ProxyTiming.SCAN_PORT_END
 
     companion object {
-        /** 并发端口扫描的线程数上限。 */
-        private const val SCAN_THREAD_COUNT = 20
-
-        /** probeStatus 响应体读取上限，防异常端口返回超大 body 占内存。 */
-        private const val PROBE_MAX_BYTES = 65_536
-
         /** tools/call 默认超时：资产搜索等 GameThread 任务常超过 5s。 */
-        const val TOOLS_CALL_TIMEOUT_MS = 120_000L
+        const val TOOLS_CALL_TIMEOUT_MS = ProxyTiming.TOOLS_CALL_TIMEOUT_MS
 
         /** 与 tools/call 对齐，避免 tools/list 仍用 3s 与慢工具并发。 */
         const val WS_LIGHT_REQUEST_TIMEOUT_MS = TOOLS_CALL_TIMEOUT_MS
-
-        /** 长连接存活时，每隔 N 次维护轮才做一次全端口扫描；其余轮仅探测 connectedPort。 */
-        private const val FULL_SCAN_EVERY_N_TICKS = 6
-
-        /** 有挂起请求时（忙）的应用层保活 ping 间隔（与 VSCode WS_KEEPALIVE_BUSY_MS 对齐）。 */
-        private const val WS_KEEPALIVE_BUSY_MS = 5_000L
-
-        /** 无挂起请求时（闲）的应用层保活 ping 间隔（与 VSCode WS_KEEPALIVE_IDLE_MS 对齐）。 */
-        private const val WS_KEEPALIVE_IDLE_MS = 15_000L
     }
 
     /** 连接状态变更串行锁：防止扫描定时器与 onClose 重扫叠加导致连接抖动。 */
@@ -263,15 +248,22 @@ class UnrealInstanceManager {
      * 大幅降低稳态背景探测开销（101 端口/轮 → 1 端口/轮）。
      */
     fun maintainConnection() {
-        if (isWsOpen() && connectedPort > 0) {
-            // 有挂起请求 = 连接正被使用，本身即存活证明，跳过探测避免 GameThread 忙时误判
-            if (pendingRequests.isNotEmpty()) return
-            if (fullScanCountdown.getAndDecrement() > 0) {
-                if (probeStatus(connectedPort, connectedHost) != null) return // 心跳成功，省去全量扫描
-                resetWsConnection(clearPreferred = false)      // 确实失联 → 重置后转全量重扫
+        val decision = decideMaintain(
+            isWsOpen() && connectedPort > 0,
+            pendingRequests.size,
+            fullScanCountdown.get(),
+        )
+        when (decision.action) {
+            MaintainAction.SKIP -> return
+            MaintainAction.PROBE -> {
+                fullScanCountdown.set(decision.nextCountdown)
+                // 心跳成功则省去全量扫描；失联则重置后转全量重扫
+                if (probeStatus(connectedPort, connectedHost) != null) return
+                resetWsConnection(clearPreferred = false)
             }
+            MaintainAction.FULL_SCAN -> Unit
         }
-        fullScanCountdown.set(FULL_SCAN_EVERY_N_TICKS)
+        fullScanCountdown.set(ProxyTiming.FULL_SCAN_EVERY_N_TICKS)
         discoverInstances()
     }
 
@@ -329,7 +321,7 @@ class UnrealInstanceManager {
         // 防御：用户将 start/end 配置颠倒时自动交换，避免 fixedThreadPool(负数) 抛异常
         val (start, end) = NexusLinkSettings.clampScanPorts(scanPortStart, scanPortEnd)
         val pool = Executors.newFixedThreadPool(
-            minOf(SCAN_THREAD_COUNT, end - start + 1)
+            minOf(ProxyTiming.SCAN_CONCURRENCY, end - start + 1)
         )
         return try {
             val futures = (start..end).map { port ->
@@ -499,7 +491,7 @@ class UnrealInstanceManager {
      */
     private fun schedulePing() {
         pingFuture?.cancel(false)
-        val delay = if (pendingRequests.isNotEmpty()) WS_KEEPALIVE_BUSY_MS else WS_KEEPALIVE_IDLE_MS
+        val delay = if (pendingRequests.isNotEmpty()) ProxyTiming.WS_KEEPALIVE_BUSY_MS else ProxyTiming.WS_KEEPALIVE_IDLE_MS
         pingFuture = reconnectExecutor.schedule({
             val ws = wsClient
             if (ws != null && ws.isOpen) {
@@ -673,7 +665,7 @@ class UnrealInstanceManager {
 
             // Content-Length 超限时快速跳过，避免无界读取
             val contentLength = conn.contentLengthLong
-            if (contentLength > PROBE_MAX_BYTES) return null
+            if (contentLength > ProxyTiming.PROBE_MAX_BYTES) return null
 
             val body = conn.inputStream.bufferedReader().use { reader ->
                 val sb = StringBuilder()
@@ -682,7 +674,7 @@ class UnrealInstanceManager {
                 var n: Int
                 while (reader.read(buf).also { n = it } != -1) {
                     totalRead += n
-                    if (totalRead > PROBE_MAX_BYTES) return null
+                    if (totalRead > ProxyTiming.PROBE_MAX_BYTES) return null
                     sb.append(buf, 0, n)
                 }
                 sb.toString()
