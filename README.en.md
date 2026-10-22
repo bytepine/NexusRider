@@ -115,7 +115,11 @@ The MCP server is per **project**. Extra windows may advance from `6800` (`6801`
 
 ### Logs
 
-`%LOCALAPPDATA%\JetBrains\Rider<version>\log\idea.log` (macOS/Linux: `~/Library/Logs/JetBrains/Rider<version>/idea.log`). Search `Nexus MCP`.
+Use **Help → Show Log in Explorer/Finder** to locate `idea.log`; search for `com.nexusmcp` or `MCP`.
+
+Default INFO/WARN logs include client versions, session creation and initialization, invalid or evicted sessions, HTTP rejections, SSE connections, call start/completion/duration/failure, server stop reasons and connection recovery. Match sessions by their hashed `session` value and calls by `request` within one server run. `missing_session` / `unknown_session` distinguish absent headers from unknown IDs; `session_limit` / `waiting_for_initialize` identify eviction reasons. Tokens, complete session IDs, tool arguments and response bodies are omitted.
+
+For disconnect reports, include the incident time, AI client name/version and client log alongside the relevant Rider log. Restarting the server invalidates sessions; clients must initialize again, which can be triggered by toggling the MCP connection. Routine scans and heartbeats do not produce INFO noise.
 
 ### Asset edits not on disk
 
@@ -131,7 +135,7 @@ That is NexusLink persist behavior, not this proxy. See the [usage-guide FAQ](ht
 
 Output: `build/distributions/*.zip`. Debug: `./gradlew runIde` (local Rider 2025.3 + JDK 21).
 
-Run `./gradlew testProxyPolicy` (`gradlew.bat testProxyPolicy` on Windows) before submitting. It checks the PascalCase contract and local HTTP/WebSocket multi-instance routing without launching Rider or UE. CI runs the same check before building.
+Run `./gradlew check buildPlugin` (`gradlew.bat check buildPlugin` on Windows) before submitting. The included `testProxyPolicy` task checks the PascalCase contract, local HTTP/WebSocket multi-instance routing and diagnostic redaction without launching Rider or UE. CI runs the same check before building.
 
 GitHub Release notes come only from `CHANGELOG.md` (`py scripts/extract_release_notes.py --version X.Y.Z --verify`). Tag: `nexus-rider-vX.Y.Z`. Record product changes in [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`.
 

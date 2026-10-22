@@ -51,7 +51,7 @@ class NexusMcpDispatcher(
          * 运行时读取插件版本：从打包资源 nexus-mcp-version.txt 读取（由 Gradle 注入），
          * 不依赖任何 @ApiStatus.Internal 平台 API；IDE 开发态资源缺失时回退 "0.0.0"。
          */
-        private val SERVER_VERSION: String by lazy {
+        internal val SERVER_VERSION: String by lazy {
             NexusMcpDispatcher::class.java.getResourceAsStream("/nexus-mcp-version.txt")
                 ?.bufferedReader(Charsets.UTF_8)
                 ?.use { it.readText().trim() }
@@ -78,7 +78,7 @@ class NexusMcpDispatcher(
         try {
             msg = JSONObject(jsonLine)
         } catch (e: Exception) {
-            log.warn("JSON 解析失败: $jsonLine")
+            log.warn("MCP JSON 解析失败 chars=${jsonLine.length} rpc_code=$PARSE_ERROR")
             return makeError(null, PARSE_ERROR, "Parse error")
         }
 
@@ -115,7 +115,7 @@ class NexusMcpDispatcher(
                 handleToolsCall(id, params)
             }
             else -> {
-                log.warn("未知方法: $method")
+                log.warn("未知方法: ${McpDiagnostics.text(method)}")
                 if (id != null) makeError(id, METHOD_NOT_FOUND, "Method not found: $method") else ""
             }
         }
@@ -312,6 +312,7 @@ class NexusMcpDispatcher(
             callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
             var first = unrealManager.forwardToolCall(forwardParams)
             if (first.status == WsRequestStatus.DISCONNECTED && unrealManager.ensureLongConnection()) {
+                log.info("工具转发重连后重试 tool=${McpDiagnostics.text(toolName)} capability=${McpDiagnostics.text(callInfo.capability)}")
                 callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
                 unrealManager.forwardToolCall(forwardParams)
             } else {
@@ -321,6 +322,7 @@ class NexusMcpDispatcher(
         when (outcome.status) {
             WsRequestStatus.DISCONNECTED -> {
                 hub.lookupDegraded(callInfo, now)?.let { snap ->
+                    log.warn("UE 未连接，返回缓存快照 tool=${McpDiagnostics.text(toolName)} capability=${McpDiagnostics.text(callInfo.capability)} snapshot=${McpDiagnostics.text(snap.snapshotAt)}")
                     return makeResult(id, ProxySessionHub.wrapDegraded(snap.result, snap.snapshotAt))
                 }
                 unrealManager.proxyFeedbackBuffer.enqueue(

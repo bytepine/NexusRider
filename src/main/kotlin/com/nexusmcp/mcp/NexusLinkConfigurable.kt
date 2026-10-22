@@ -165,9 +165,9 @@ class NexusLinkConfigurable : Configurable {
         AppExecutorUtil.getAppExecutorService().submit {
             projects.forEach { project ->
                 when {
-                    !nowEnabled -> NexusLinkStartupActivity.stopServer(project)
+                    !nowEnabled -> NexusLinkStartupActivity.stopServer(project, "config_disabled")
                     portChanged || prevEnabled != nowEnabled -> {
-                        if (portChanged) NexusLinkStartupActivity.stopServer(project)
+                        if (portChanged) NexusLinkStartupActivity.stopServer(project, "listener_config_changed")
                         NexusLinkStartupActivity.startServer(project)
                     }
                     scanChanged -> NexusLinkStartupActivity.applyLiveScanSettings(project)

@@ -115,7 +115,11 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 
 ### 查看日志
 
-`%LOCALAPPDATA%\JetBrains\Rider<version>\log\idea.log`（macOS/Linux：`~/Library/Logs/JetBrains/Rider<version>/idea.log`），搜索 `Nexus MCP`。
+通过 **Help → Show Log in Explorer/Finder** 打开日志目录，提供对应时段的 `idea.log`；可搜索 `com.nexusmcp` 或 `MCP`。
+
+默认 INFO/WARN 即记录客户端版本、会话创建与握手、失效或淘汰、HTTP 拒绝、SSE 通断、调用开始/完成/耗时与失败，以及服务器停止原因和连接恢复。`session` 是会话摘要，`request` 是本次服务器运行内的请求编号；`missing_session` / `unknown_session` 区分缺少 ID 与 ID 已不存在，`session_limit` / `waiting_for_initialize` 标明清理原因。Token、完整会话 ID、工具参数和响应正文不写入日志。
+
+反馈断连时请同时提供报错时间、AI 客户端名称与版本以及客户端日志。服务器重启会使原会话失效，客户端需要重新 `initialize`，可关闭再开启该 MCP 连接。常规扫描和心跳不会刷 INFO。
 
 ### 改了 UE 资产但磁盘未变化
 
@@ -129,7 +133,7 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 ./gradlew buildPlugin    # Windows: gradlew.bat buildPlugin
 ```
 
-提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发及非法目标拒绝；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
+提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发、非法目标拒绝及日志字段脱敏；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
 
 产物：`build/distributions/*.zip`。调试：`./gradlew runIde`（需本机 Rider 2025.3 + JDK 21）。
 

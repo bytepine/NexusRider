@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * nexus-rider 独立 MCP HTTP 服务器（per-session 会话隔离）。
@@ -38,6 +39,7 @@ import java.util.concurrent.TimeUnit
 class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private val proxyToken: String) {
 
     private val log = logger<NexusMcpServer>()
+    private val requestCounter = AtomicLong()
 
     private var bossGroup: EventLoopGroup? = null
     private var workerGroup: EventLoopGroup? = null
@@ -101,8 +103,13 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
                                 }
                             })
                             addLast(HttpServerCodec())
-                            addLast(HttpObjectAggregator(NexusMcpAuth.MAX_BODY_BYTES))
-                            addLast(McpHttpHandler(sessions, mgr, executor, sse, proxyToken) { sendToolsChangedNotification() })
+                            addLast(object : HttpObjectAggregator(NexusMcpAuth.MAX_BODY_BYTES) {
+                                override fun handleOversizedMessage(ctx: ChannelHandlerContext, oversized: HttpMessage) {
+                                    log.warn("MCP HTTP 请求拒绝 status=413 reason=payload_too_large remote=${McpDiagnostics.text(ctx.channel().remoteAddress().toString())}")
+                                    super.handleOversizedMessage(ctx, oversized)
+                                }
+                            })
+                            addLast(McpHttpHandler(sessions, mgr, executor, sse, proxyToken, requestCounter) { sendToolsChangedNotification() })
                         }
                     }
                 })
@@ -112,12 +119,13 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
             true
         } catch (e: Exception) {
             log.error("MCP 服务器启动失败：${e.message}")
-            stop()
+            stop("start_failed")
             false
         }
     }
 
-    fun stop() {
+    fun stop(reason: String = "stop_requested") {
+        log.info("MCP HTTP 停止 reason=${McpDiagnostics.text(reason)} port=$port sessions=${httpSessions.size} sse=${sseContexts.size}；现有会话将失效")
         sseContexts.forEach { it.close() }
         sseContexts.clear()
         httpSessions.clear()
@@ -144,14 +152,16 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
         val dead = mutableListOf<ChannelHandlerContext>()
         sseContexts.forEach { ctx ->
             if (ctx.channel().isActive) {
-                ctx.writeAndFlush(DefaultHttpContent(buf.retainedDuplicate()))
+                ctx.writeAndFlush(DefaultHttpContent(buf.retainedDuplicate())).addListener { future ->
+                    if (!future.isSuccess) log.warn("MCP SSE 通知发送失败 type=${future.cause()?.javaClass?.simpleName}")
+                }
             } else {
                 dead.add(ctx)
             }
         }
         sseContexts.removeAll(dead)
         buf.release()
-        log.info("已推送 notifications/tools/list_changed（活跃 SSE: ${sseContexts.size}）")
+        log.debug("已推送 notifications/tools/list_changed（活跃 SSE: ${sseContexts.size}）")
     }
 
     val isRunning: Boolean get() = channel?.isActive == true
@@ -172,6 +182,7 @@ private class McpHttpHandler(
     private val executor: ExecutorService,
     private val sseContexts: CopyOnWriteArrayList<ChannelHandlerContext>,
     private val proxyToken: String,
+    private val requestCounter: AtomicLong,
     private val onSessionReady: () -> Unit,
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
@@ -180,12 +191,14 @@ private class McpHttpHandler(
     override fun channelRead0(ctx: ChannelHandlerContext, request: FullHttpRequest) {
         val origin = request.headers().get(HttpHeaderNames.ORIGIN)
         if (!origin.isNullOrBlank()) {
+            logRejection(ctx, request, 403, "browser_origin")
             sendResponse(ctx, HttpResponseStatus.FORBIDDEN, """{"error":"Browser Origin is not allowed"}""")
             return
         }
         val presented = NexusMcpAuth.extractBearer(request.headers().get(HttpHeaderNames.AUTHORIZATION))
         val st = NexusLinkSettings.instance.state
         if (st.requireAuth && !NexusMcpAuth.isTokenAccepted(presented, proxyToken, st.extraAuthTokens)) {
+            logRejection(ctx, request, 401, "invalid_authorization")
             sendResponse(ctx, HttpResponseStatus.UNAUTHORIZED, """{"error":"Missing or invalid Authorization: Bearer token"}""")
             return
         }
@@ -194,26 +207,31 @@ private class McpHttpHandler(
         val method = request.method()
         when {
             path == "/stream" && method == HttpMethod.POST    -> handlePost(ctx, request)
-            path == "/sse"    && method == HttpMethod.GET     -> handleGet(ctx)
-            path == "/stream" && method == HttpMethod.GET     -> handleGet(ctx)
-            else -> sendResponse(ctx, HttpResponseStatus.NOT_FOUND, """{"error":"Not Found"}""")
+            path == "/sse"    && method == HttpMethod.GET     -> handleGet(ctx, request)
+            path == "/stream" && method == HttpMethod.GET     -> handleGet(ctx, request)
+            else -> {
+                logRejection(ctx, request, 404, "unsupported_endpoint")
+                sendResponse(ctx, HttpResponseStatus.NOT_FOUND, """{"error":"Not Found"}""")
+            }
         }
     }
 
     private fun handlePost(ctx: ChannelHandlerContext, request: FullHttpRequest) {
+        val started = System.nanoTime()
+        val requestId = requestCounter.incrementAndGet()
         val body = request.content().toString(StandardCharsets.UTF_8)
         if (body.isBlank()) {
+            logRejection(ctx, request, 400, "empty_body")
             sendResponse(ctx, HttpResponseStatus.BAD_REQUEST, """{"error":"empty body"}""")
             return
         }
 
         val incomingSessionId = request.headers().get(MCP_SESSION_HEADER) ?: ""
         // 先尝试 JSON 解析取 method，避免工具参数含 "initialize" 子串时误判
-        val bIsInitialize = try {
-            org.json.JSONObject(body).optString("method") == "initialize"
-        } catch (_: Exception) {
-            body.contains("\"initialize\"")
-        }
+        val msg = try { org.json.JSONObject(body) } catch (_: Exception) { null }
+        val bIsInitialize = msg?.optString("method")?.let { it == "initialize" } ?: body.contains("\"initialize\"")
+        val remote = McpDiagnostics.text(ctx.channel().remoteAddress().toString())
+        val fields = "request=$requestId ${McpDiagnostics.fields(msg)}"
 
         // 在独立线程执行 dispatch，防止 WS 转发的同步等待阻塞 Netty IO 线程
         executor.submit {
@@ -229,31 +247,49 @@ private class McpHttpHandler(
                     synchronized(sessions) {
                         sessions[sessionId] = dispatcher
                         // 清理仍处于 WaitingForInitialize 的陈旧会话
-                        sessions.entries.removeIf { it.value.state == McpSessionState.WaitingForInitialize && it.key != sessionId }
+                        sessions.entries.removeIf {
+                            val remove = it.value.state == McpSessionState.WaitingForInitialize && it.key != sessionId
+                            if (remove) log.warn("MCP 会话移除 session=${McpDiagnostics.session(it.key)} reason=waiting_for_initialize")
+                            remove
+                        }
                         // 超上限时按插入序淘汰最旧的非当前会话（防循环重连导致内存增长）
                         if (sessions.size > NexusMcpServer.MAX_SESSIONS) {
                             val oldest = sessions.keys.firstOrNull { it != sessionId }
-                            if (oldest != null) sessions.remove(oldest)
+                            if (oldest != null) {
+                                log.warn("MCP 会话移除 session=${McpDiagnostics.session(oldest)} reason=session_limit limit=${NexusMcpServer.MAX_SESSIONS}")
+                                sessions.remove(oldest)
+                            }
                         }
                     }
-                    log.info("新建 MCP 会话: $sessionId（当前 ${sessions.size} 个活跃会话）")
+                    val params = msg?.optJSONObject("params")
+                    val client = params?.optJSONObject("clientInfo")
+                    log.info("MCP 新会话 session=${McpDiagnostics.session(sessionId)} previous=${McpDiagnostics.session(incomingSessionId)} client=${McpDiagnostics.text(client?.opt("name"))} version=${McpDiagnostics.text(client?.opt("version"))} protocol=${McpDiagnostics.text(params?.opt("protocolVersion"))} remote=$remote sessions=${sessions.size}")
                 } else if (incomingSessionId.isNotBlank() && sessions.containsKey(incomingSessionId)) {
                     sessionId = incomingSessionId
                     dispatcher = sessions[sessionId]!!
                 } else {
-                    log.warn("POST /stream 缺少或无效 Mcp-Session-Id: $incomingSessionId")
+                    val reason = if (incomingSessionId.isBlank()) "missing_session" else "unknown_session"
+                    log.warn("MCP HTTP 请求拒绝 status=404 reason=$reason session=${McpDiagnostics.session(incomingSessionId)} remote=$remote $fields sessions=${sessions.size}；客户端需要重新 initialize")
                     sendResponse(ctx, HttpResponseStatus.NOT_FOUND, """{"error":"Invalid or missing Mcp-Session-Id"}""")
                     return@submit
                 }
 
+                val callFields = "session=${McpDiagnostics.session(sessionId)} $fields"
+                if (msg?.optString("method") == "tools/call") log.info("MCP 请求开始 $callFields")
                 val responseJson = dispatcher.dispatch(body)
+                val timing = "elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}"
+                val failure = McpDiagnostics.failure(responseJson)
+                if (failure != null) log.warn("MCP 请求失败 $callFields $failure $timing")
+                else if (msg?.optString("method") in listOf("initialize", "notifications/initialized", "tools/list", "tools/call")) {
+                    log.info("MCP 请求完成 $callFields $timing")
+                }
                 if (responseJson.isBlank()) {
                     sendNoContent(ctx, HttpResponseStatus.ACCEPTED, sessionId)
                 } else {
                     sendResponse(ctx, HttpResponseStatus.OK, responseJson, "application/json", sessionId)
                 }
             } catch (e: Exception) {
-                log.error("dispatch 异常: ${e.message}", e)
+                log.warn("MCP dispatch 异常 $fields type=${e.javaClass.simpleName} elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}")
                 sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, """{"error":"internal error"}""")
             }
         }
@@ -264,8 +300,11 @@ private class McpHttpHandler(
      * 静默保持连接，仅用于服务端推送通知（如 notifications/tools/list_changed）。
      * 每 SSE_KEEPALIVE_MS 写一行注释帧避免经反代/NAT idle 被断开。
      */
-    private fun handleGet(ctx: ChannelHandlerContext) {
+    private fun handleGet(ctx: ChannelHandlerContext, request: FullHttpRequest) {
+        val started = System.nanoTime()
+        val fields = "session=${McpDiagnostics.session(request.headers().get(MCP_SESSION_HEADER).orEmpty())} remote=${McpDiagnostics.text(ctx.channel().remoteAddress().toString())}"
         if (sseContexts.size >= NexusMcpServer.MAX_SSE_CLIENTS) {
+            logRejection(ctx, request, 503, "sse_limit")
             sendResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, """{"error":"too many SSE clients"}""")
             return
         }
@@ -280,17 +319,21 @@ private class McpHttpHandler(
         ctx.writeAndFlush(response)
 
         sseContexts.add(ctx)
+        log.info("MCP SSE 已连接 $fields clients=${sseContexts.size}")
 
         // 周期心跳帧（复用 Netty channel event loop，避免额外线程）
         val keepaliveFuture: ScheduledFuture<*> = ctx.channel().eventLoop().scheduleAtFixedRate({
             if (!ctx.channel().isActive) return@scheduleAtFixedRate
             val buf = Unpooled.copiedBuffer(": keepalive\n\n", StandardCharsets.UTF_8)
-            ctx.writeAndFlush(DefaultHttpContent(buf))
+            ctx.writeAndFlush(DefaultHttpContent(buf)).addListener { future ->
+                if (!future.isSuccess) log.warn("MCP SSE 心跳发送失败 $fields type=${future.cause()?.javaClass?.simpleName}")
+            }
         }, SSE_KEEPALIVE_MS, SSE_KEEPALIVE_MS, TimeUnit.MILLISECONDS)
 
         ctx.channel().closeFuture().addListener(ChannelFutureListener {
             keepaliveFuture.cancel(false)
             sseContexts.remove(ctx)
+            log.info("MCP SSE 已断开 $fields elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}")
         })
     }
 
@@ -312,19 +355,28 @@ private class McpHttpHandler(
             set(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes())
         }
         if (sessionId != null) response.headers().set(MCP_SESSION_HEADER, sessionId)
-        ctx.writeAndFlush(response)
+        ctx.writeAndFlush(response).addListener { future ->
+            if (!future.isSuccess) log.warn("MCP 响应发送失败 status=${status.code()} session=${McpDiagnostics.session(sessionId.orEmpty())} type=${future.cause()?.javaClass?.simpleName}")
+        }
     }
 
     private fun sendNoContent(ctx: ChannelHandlerContext, status: HttpResponseStatus, sessionId: String? = null) {
         val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, Unpooled.EMPTY_BUFFER)
         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0)
         if (sessionId != null) response.headers().set(MCP_SESSION_HEADER, sessionId)
-        ctx.writeAndFlush(response)
+        ctx.writeAndFlush(response).addListener { future ->
+            if (!future.isSuccess) log.warn("MCP 响应发送失败 status=${status.code()} session=${McpDiagnostics.session(sessionId.orEmpty())} type=${future.cause()?.javaClass?.simpleName}")
+        }
     }
 
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
+        log.warn("MCP HTTP 异常 status=500 type=${cause.javaClass.simpleName} remote=${McpDiagnostics.text(ctx.channel().remoteAddress().toString())}")
         val payload = org.json.JSONObject().put("error", cause.message ?: "internal error").toString()
         sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, payload)
         ctx.close()
+    }
+
+    private fun logRejection(ctx: ChannelHandlerContext, request: FullHttpRequest, status: Int, reason: String) {
+        log.warn("MCP HTTP 请求拒绝 status=$status reason=$reason http_method=${McpDiagnostics.text(request.method().name())} path=${McpDiagnostics.text(request.uri().substringBefore('?'))} remote=${McpDiagnostics.text(ctx.channel().remoteAddress().toString())} session=${McpDiagnostics.session(request.headers().get(MCP_SESSION_HEADER).orEmpty())}")
     }
 }

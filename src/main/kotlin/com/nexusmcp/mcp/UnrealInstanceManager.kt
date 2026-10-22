@@ -263,6 +263,7 @@ class UnrealInstanceManager {
                 fullScanCountdown.set(decision.nextCountdown)
                 // 心跳成功则省去全量扫描；失联则重置后转全量重扫
                 if (probeStatus(connectedPort, connectedHost) != null) return
+                log.warn("UE 状态探测失败，重置连接 host=${McpDiagnostics.text(connectedHost)} port=$connectedPort")
                 resetWsConnection(clearPreferred = false)
             }
             MaintainAction.FULL_SCAN -> Unit
@@ -279,6 +280,8 @@ class UnrealInstanceManager {
      */
     fun discoverInstances(): List<UnrealInstanceInfo> = synchronized(connectionLock) {
         val found = scanPortsParallel()
+        val oldKeys = instances.map { LanHost.instanceKey(it.host, it.port) }.toSet()
+        if (oldKeys != found.map { LanHost.instanceKey(it.host, it.port) }.toSet()) log.info("UE 实例列表变化 count=${found.size}")
 
         instances.clear()
         instances.addAll(found)
@@ -292,7 +295,7 @@ class UnrealInstanceManager {
         }
 
         if (connectedPort > 0 && found.none { isConnectedInfo(it) }) {
-            log.info("已连接的 UE 实例 (${connectedHost}:${connectedPort}) 已不可用，自动断开")
+            log.warn("已连接 UE 不在扫描结果中，重置连接 host=${McpDiagnostics.text(connectedHost)} port=$connectedPort")
             resetWsConnection(clearPreferred = false)
         }
 
@@ -368,7 +371,11 @@ class UnrealInstanceManager {
         }
         // 已连到同实例且 WS 存活：直接复用，避免 reset→重建造成连接抖动
         if (connectedPort == port && connectedHost == targetHost && isWsOpen()) return true
-        val info = probeStatus(port, targetHost, tokenFor(targetHost, port).ifBlank { null }) ?: return false
+        val info = probeStatus(port, targetHost, tokenFor(targetHost, port).ifBlank { null }) ?: run {
+            log.warn("UE 连接失败 stage=status_probe host=${McpDiagnostics.text(targetHost)} port=$port manual=$setPreferred")
+            return false
+        }
+        log.info("开始连接 UE host=${McpDiagnostics.text(targetHost)} port=$port ws_port=${info.wsPort} manual=$setPreferred")
         resetWsConnection(clearPreferred = false)
 
         try {
@@ -379,7 +386,7 @@ class UnrealInstanceManager {
                     // 0=关闭库层 ping 探活：本地回环无需保活，半开由扫描定时器兜底，
                     // 避免长 GameThread 任务（search_asset 等）期间因 pong 迟到被误判丢失而断链
                     connectionLostTimeout = 0
-                    log.info("WebSocket 已连接到 UE 实例（端口 $port, 项目: ${info.projectName}）")
+                    log.debug("WS 握手完成 host=${McpDiagnostics.text(targetHost)} port=$port epoch=$epoch")
                 }
 
                 override fun onMessage(message: String) {
@@ -393,7 +400,7 @@ class UnrealInstanceManager {
 
                 override fun onClose(code: Int, reason: String?, remote: Boolean) {
                     if (connectionEpoch.get() != epoch) return
-                    log.info("WebSocket 连接关闭: code=$code, reason=${reason.orEmpty()}, remote=$remote, port=$port")
+                    log.warn("WS 连接关闭 host=${McpDiagnostics.text(targetHost)} port=$port epoch=$epoch code=$code remote=$remote pending=${pendingRequests.size}")
                     if (connectedPort == port && connectedHost == targetHost) {
                         connectedPort = -1
                         connectedHost = LanHost.LOOPBACK
@@ -411,7 +418,7 @@ class UnrealInstanceManager {
                 }
 
                 override fun onError(ex: Exception?) {
-                    log.warn("WebSocket 错误（端口 $port）: ${ex?.message}")
+                    log.warn("WS 连接失败 host=${McpDiagnostics.text(targetHost)} port=$port epoch=$epoch type=${ex?.javaClass?.simpleName}")
                 }
             }
 
@@ -429,7 +436,7 @@ class UnrealInstanceManager {
                         if (authOk) break
                     }
                     if (!authOk) {
-                        log.warn("WebSocket auth 失败（端口 $port）")
+                        log.warn("UE 连接失败 stage=auth host=${McpDiagnostics.text(targetHost)} port=$port epoch=$epoch")
                         wsClient?.close()
                         wsClient = null
                         return false
@@ -439,6 +446,7 @@ class UnrealInstanceManager {
                 connectedHost = targetHost
                 cacheScope = LanHost.instanceKey(targetHost, port)
                 connectedToolsListMode = info.toolsListMode
+                log.info("已连接 UE host=${McpDiagnostics.text(targetHost)} port=$port ws_port=${info.wsPort} project=${McpDiagnostics.text(info.projectName)} epoch=$epoch")
                 // 启动应用层保活 ping（忙 5s / 闲 15s），替代库层 connectionLostTimeout
                 schedulePing()
                 // 异步拉取 UE 端 instructions 缓存，供下次 handleInitialize 拼接
@@ -456,19 +464,23 @@ class UnrealInstanceManager {
                 false
             }
         } catch (e: Exception) {
-            log.warn("WebSocket 连接失败（端口 $port）: ${e.message}")
+            log.warn("UE 连接失败 stage=ws_connect host=${McpDiagnostics.text(targetHost)} port=$port type=${e.javaClass.simpleName}")
             wsClient = null
             false
         }
     }
 
     fun disconnect() {
+        log.info("主动断开 UE，暂停自动重连直到下一次手动连接")
         manuallyDisconnected = true
         resetWsConnection(clearPreferred = true)
     }
 
     /** 关闭 WS 并重置连接状态；clearPreferred 仅用户主动断开时为 true。 */
     private fun resetWsConnection(clearPreferred: Boolean) {
+        if (wsClient != null || pendingRequests.isNotEmpty()) {
+            log.info("重置 UE 连接 host=${McpDiagnostics.text(connectedHost)} port=$connectedPort pending=${pendingRequests.size} clear_preferred=$clearPreferred")
+        }
         connectionEpoch.incrementAndGet()
         // 取消保活 ping
         pingFuture?.cancel(false)
@@ -500,7 +512,9 @@ class UnrealInstanceManager {
         pingFuture = reconnectExecutor.schedule({
             val ws = wsClient
             if (ws != null && ws.isOpen) {
-                try { ws.sendPing() } catch (_: Exception) { }
+                try { ws.sendPing() } catch (e: Exception) {
+                    log.warn("WS 保活发送失败 type=${e.javaClass.simpleName}")
+                }
                 schedulePing() // 自重调，下次间隔根据当时忙闲重新决定
             }
         }, delay, TimeUnit.MILLISECONDS)
@@ -574,7 +588,10 @@ class UnrealInstanceManager {
         val h = LanHost.normalizeHost(host)
         val info = instances.find { it.port == port && LanHost.normalizeHost(it.host) == h }
             ?: probeStatus(port, h, tokenFor(h, port).ifBlank { null })
-            ?: return WsRequestOutcome.disconnected()
+            ?: run {
+                log.warn("UE 一次性转发失败 stage=status_probe host=${McpDiagnostics.text(h)} port=$port")
+                return WsRequestOutcome.disconnected()
+            }
         val needAuth = info.authRequired
         val tokens = tokensFor(info.host, port)
         var authIdx = 0
@@ -601,7 +618,10 @@ class UnrealInstanceManager {
             oneShot = object : WebSocketClient(URI("ws://${info.host}:${info.wsPort}")) {
                 override fun onOpen(handshakedata: ServerHandshake?) {
                     if (!needAuth) send(request.toString())
-                    else if (tokens.isEmpty()) latch.countDown()
+                    else if (tokens.isEmpty()) {
+                        log.warn("UE 一次性转发失败 stage=auth host=${McpDiagnostics.text(h)} port=$port id=$callId")
+                        latch.countDown()
+                    }
                     else send(authJson(currentAuthId, tokens[0]).toString())
                 }
                 override fun onMessage(message: String) {
@@ -614,36 +634,45 @@ class UnrealInstanceManager {
                             else if (++authIdx < tokens.size) {
                                 currentAuthId = idCounter.getAndIncrement()
                                 send(authJson(currentAuthId, tokens[authIdx]).toString())
-                            } else latch.countDown()
+                            } else {
+                                log.warn("UE 一次性转发失败 stage=auth host=${McpDiagnostics.text(h)} port=$port id=$callId")
+                                latch.countDown()
+                            }
                             return
                         }
                         if (rid == callId) {
                             holder[0] = message
                             latch.countDown()
                         }
-                    } catch (_: Exception) { /* ignore */ }
+                    } catch (_: Exception) {
+                        log.warn("UE 一次性转发失败 stage=decode host=${McpDiagnostics.text(h)} port=$port id=$callId")
+                    }
                 }
                 override fun onMessage(bytes: java.nio.ByteBuffer) {
                     onMessage(Charsets.UTF_8.decode(bytes).toString())
                 }
                 override fun onClose(code: Int, reason: String?, remote: Boolean) {
+                    if (latch.count > 0) log.warn("UE 一次性转发失败 stage=closed host=${McpDiagnostics.text(h)} port=$port id=$callId code=$code")
                     latch.countDown()
                 }
                 override fun onError(ex: Exception?) {
-                    log.warn("一次性 WS 转发错误（端口 $port）: ${ex?.message}")
+                    log.warn("UE 一次性转发失败 stage=ws_error host=${McpDiagnostics.text(h)} port=$port id=$callId type=${ex?.javaClass?.simpleName}")
                     latch.countDown()
                 }
             }
-            if (!oneShot.connectBlocking(3, TimeUnit.SECONDS)) return WsRequestOutcome.disconnected()
+            if (!oneShot.connectBlocking(3, TimeUnit.SECONDS)) {
+                log.warn("UE 一次性转发失败 stage=ws_connect host=${McpDiagnostics.text(h)} port=$port id=$callId")
+                return WsRequestOutcome.disconnected()
+            }
             // 超时后强制关闭连接，避免挂起
             if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-                log.warn("一次性 WS 转发超时（端口 $port）")
+                log.warn("UE 一次性转发失败 stage=timeout host=${McpDiagnostics.text(h)} port=$port id=$callId timeout_ms=$timeoutMs")
                 try { oneShot.close() } catch (_: Exception) { }
                 return WsRequestOutcome.timeout()
             }
             holder[0]?.let { WsRequestOutcome.ok(JSONObject(it)) } ?: WsRequestOutcome.disconnected()
         } catch (e: Exception) {
-            log.warn("一次性 WS 转发失败（端口 $port）: ${e.message}")
+            log.warn("UE 一次性转发失败 stage=request host=${McpDiagnostics.text(h)} port=$port id=$callId type=${e.javaClass.simpleName}")
             WsRequestOutcome.disconnected()
         } finally {
             try { oneShot?.close() } catch (_: Exception) { /* ignore */ }
@@ -711,7 +740,10 @@ class UnrealInstanceManager {
      * 通过 WebSocket 发送 JSON-RPC 请求并同步等待响应。
      */
     private fun sendWsRequest(method: String, params: JSONObject?, timeoutMs: Long = 5000): WsRequestOutcome {
+        val queued = System.nanoTime()
         synchronized(wsRequestLock) {
+            val waited = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - queued)
+            if (waited >= 1000) log.info("WS 请求排队 method=${McpDiagnostics.text(method)} wait_ms=$waited")
             return sendWsRequestUnlocked(method, params, timeoutMs)
         }
     }
@@ -719,6 +751,7 @@ class UnrealInstanceManager {
     private fun sendWsRequestUnlocked(method: String, params: JSONObject?, timeoutMs: Long): WsRequestOutcome {
         val ws = wsClient
         if (ws == null || !ws.isOpen) {
+            log.debug("WS 请求未发送 method=${McpDiagnostics.text(method)} reason=disconnected")
             clearStaleConnectionState()
             return WsRequestOutcome.disconnected()
         }
@@ -738,13 +771,13 @@ class UnrealInstanceManager {
         return try {
             ws.send(request.toString())
             if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-                log.warn("WebSocket 请求超时: $method (id=$id)")
+                log.warn("WS 请求超时 method=${McpDiagnostics.text(method)} id=$id timeout_ms=$timeoutMs")
                 WsRequestOutcome.timeout()
             } else {
                 holder[0]?.let { WsRequestOutcome.ok(JSONObject(it)) } ?: WsRequestOutcome.disconnected()
             }
         } catch (e: Exception) {
-            log.warn("WebSocket 请求失败: ${e.message}")
+            log.warn("WS 请求失败 method=${McpDiagnostics.text(method)} id=$id type=${e.javaClass.simpleName}")
             WsRequestOutcome.disconnected()
         } finally {
             pendingRequests.remove(id)
@@ -774,7 +807,7 @@ class UnrealInstanceManager {
                 onToolsChanged?.invoke()
             }
         } catch (e: Exception) {
-            log.warn("WebSocket 消息解析失败: ${e.message}")
+            log.warn("WS 收到无效 JSON chars=${message.length} type=${e.javaClass.simpleName}")
         }
     }
 }

@@ -3,6 +3,7 @@
 package com.nexusmcp.mcp
 
 import org.json.JSONObject
+import com.intellij.openapi.diagnostic.logger
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -38,6 +39,7 @@ data class CacheHit(
  * 进程（项目）级会话枢纽：TTL 缓存、Pause、写门控。
  */
 class ProxySessionHub {
+    private val log = logger<ProxySessionHub>()
 
     @Volatile var writeGate: WriteGateMode = WriteGateMode.DESTRUCTIVE
     @Volatile var gatePrompter: ((CallInfo) -> GateDecision)? = null
@@ -62,6 +64,7 @@ class ProxySessionHub {
         pauseLock.withLock {
             if (paused == value) return
             paused = value
+            log.info("Agent 转发暂停状态 paused=$value")
             if (!value) pauseCondition.signalAll()
         }
     }
@@ -75,14 +78,19 @@ class ProxySessionHub {
     fun confirmIfNeeded(info: CallInfo): GateDecision {
         if (!ProxySessionPolicy.needsGate(writeGate, info.capability, info.innerArgs)) return GateDecision.ALLOW
         val prompter = gatePrompter ?: return GateDecision.ALLOW
+        log.info("等待写入确认 capability=${McpDiagnostics.text(info.capability)} timeout_ms=${ProxySessionPolicy.GATE_TIMEOUT_MS}")
         val future = CompletableFuture.supplyAsync { prompter(info) }
         return try {
-            future.get(ProxySessionPolicy.GATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            future.get(ProxySessionPolicy.GATE_TIMEOUT_MS, TimeUnit.MILLISECONDS).also {
+                log.info("写入确认结束 capability=${McpDiagnostics.text(info.capability)} decision=$it")
+            }
         } catch (_: TimeoutException) {
+            log.warn("写入确认超时 capability=${McpDiagnostics.text(info.capability)} timeout_ms=${ProxySessionPolicy.GATE_TIMEOUT_MS}")
             // 超时判 DENY 后要取消 future，否则弹窗任务会一直占着线程池并可能事后再弹
             future.cancel(true)
             GateDecision.DENY
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.warn("写入确认失败 capability=${McpDiagnostics.text(info.capability)} type=${e.javaClass.simpleName}")
             future.cancel(true)
             GateDecision.DENY
         }
@@ -159,7 +167,10 @@ class ProxySessionHub {
     private fun offload(result: JSONObject): JSONObject {
         pruneOffload()
         val dir = offloadDir
-        dir.mkdirs()
+        if (!dir.isDirectory && !dir.mkdirs()) {
+            log.warn("大响应落盘失败 stage=mkdir，保留原响应")
+            return result
+        }
         tryPosix(dir, setOf(
             PosixFilePermission.OWNER_READ,
             PosixFilePermission.OWNER_WRITE,
@@ -169,6 +180,7 @@ class ProxySessionHub {
         try {
             file.writeText(result.toString())
         } catch (_: java.io.IOException) {
+            log.warn("大响应落盘失败 stage=write，保留原响应")
             file.delete()
             return result
         }
@@ -180,6 +192,7 @@ class ProxySessionHub {
             .put("offloaded", true)
             .put("path", file.absolutePath)
             .put("bytes", file.length())
+        log.info("大响应已落盘 bytes=${file.length()} file=${McpDiagnostics.text(file.absolutePath)}")
         val summary = JSONObject()
             .put("content", org.json.JSONArray().put(JSONObject().put("type", "text").put("text",
                 JSONObject().put("summary", "payload offloaded").put("path", file.absolutePath).put("bytes", file.length()).toString())))

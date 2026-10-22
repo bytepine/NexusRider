@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /** 独立契约源集：三端 PascalCase、host/port 隔离、section/degraded 与按实例失效。 */
 fun main() {
+    testDiagnostics()
     val testRoot = Files.createTempDirectory("nexus-policy-test-").toFile()
     System.setProperty("java.io.tmpdir", testRoot.absolutePath)
     Runtime.getRuntime().addShutdownHook(Thread { testRoot.deleteRecursively() })

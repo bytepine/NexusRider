@@ -53,6 +53,7 @@ class NexusLinkStartupActivity : ProjectActivity {
             // 避免重复启动
             val existing = project.getUserData(MCP_SERVER_KEY)
             if (existing?.isRunning == true) return
+            log.info("Nexus MCP 启动 version=${McpDiagnostics.text(NexusMcpDispatcher.SERVER_VERSION)} pid=${ProcessHandle.current().pid()} platform=${McpDiagnostics.text(System.getProperty("os.name"))} port=${settings.mcpPort} listen_lan=${settings.listenLan} require_auth=${settings.requireAuth} scan=${settings.scanPortStart}-${settings.scanPortEnd} interval_s=${settings.scanIntervalSeconds}")
 
             val manager = project.getUserData(MANAGER_KEY) ?: UnrealInstanceManager().also {
                 it.scanPortStart = settings.scanPortStart
@@ -132,6 +133,7 @@ class NexusLinkStartupActivity : ProjectActivity {
         /** 热更新扫描区间/间隔：改 manager 并重建定时任务，不重启 HTTP。 */
         fun applyLiveScanSettings(project: Project) {
             val settings = NexusLinkSettings.instance.state
+            log.info("配置变更 port=${settings.mcpPort} listen_lan=${settings.listenLan} require_auth=${settings.requireAuth} scan=${settings.scanPortStart}-${settings.scanPortEnd} interval_s=${settings.scanIntervalSeconds} write_gate=${McpDiagnostics.text(settings.writeGate)}")
             val manager = project.getUserData(MANAGER_KEY) ?: return
             manager.scanPortStart = settings.scanPortStart
             manager.scanPortEnd = settings.scanPortEnd
@@ -172,12 +174,12 @@ class NexusLinkStartupActivity : ProjectActivity {
         }
 
         /** 停止 MCP 服务器及定时任务。 */
-        fun stopServer(project: Project) {
+        fun stopServer(project: Project, reason: String = "stop_requested") {
             project.getUserData(REFRESH_TASK_KEY)?.cancel(false)
             project.putUserData(REFRESH_TASK_KEY, null)
 
             val server = project.getUserData(MCP_SERVER_KEY) ?: return
-            server.stop()
+            server.stop(reason)
             project.putUserData(MCP_SERVER_KEY, null)
             log.info("Nexus MCP 已停止")
             refreshStatusBar(project)
