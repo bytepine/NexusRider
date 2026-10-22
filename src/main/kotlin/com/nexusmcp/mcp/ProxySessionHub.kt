@@ -26,13 +26,6 @@ data class CacheEntry(
     val ttlMs: Long,
 )
 
-data class ActivityState(
-    val capability: String,
-    val identity: String,
-    val atMs: Long,
-    val paused: Boolean,
-)
-
 data class CacheHit(
     val result: JSONObject,
     val kind: CacheKind,
@@ -40,13 +33,12 @@ data class CacheHit(
 )
 
 /**
- * 进程（项目）级会话枢纽：TTL 缓存、Pause、写门控、活动态。
+ * 进程（项目）级会话枢纽：TTL 缓存、Pause、写门控。
  */
 class ProxySessionHub {
 
     @Volatile var writeGate: WriteGateMode = WriteGateMode.DESTRUCTIVE
     @Volatile var gatePrompter: ((CallInfo) -> GateDecision)? = null
-    var onActivity: (() -> Unit)? = null
 
     private val pauseLock = ReentrantLock()
     private val pauseCondition = pauseLock.newCondition()
@@ -56,7 +48,6 @@ class ProxySessionHub {
             size > ProxySessionPolicy.MAX_CACHE_ENTRIES
     }
     private val cacheLock = Any()
-    @Volatile private var activity: ActivityState? = null
 
     init {
         purgeOffload()
@@ -70,25 +61,6 @@ class ProxySessionHub {
             paused = value
             if (!value) pauseCondition.signalAll()
         }
-        emitActivity()
-    }
-
-    fun getActivity(): ActivityState? {
-        if (paused) return ActivityState("", "", System.currentTimeMillis(), true)
-        return activity
-    }
-
-    fun beginCall(info: CallInfo) {
-        activity = ActivityState(info.capability, info.identity, System.currentTimeMillis(), false)
-        emitActivity()
-    }
-
-    fun endCall() {
-        emitActivity()
-    }
-
-    private fun emitActivity() {
-        onActivity?.invoke()
     }
 
     fun waitIfPaused() {

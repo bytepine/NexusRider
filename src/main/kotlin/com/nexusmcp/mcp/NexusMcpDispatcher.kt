@@ -263,12 +263,7 @@ class NexusMcpDispatcher(
                 mapOf("errorKind" to "proxy_denied"),
             )
         }
-        hub.beginCall(callInfo)
-        try {
-            return forwardRemoteCall(id, params, toolName, proxyConfig)
-        } finally {
-            hub.endCall()
-        }
+        return forwardRemoteCall(id, params, toolName, proxyConfig)
     }
 
     /** 「总是允许」只记在当前 Dispatcher（一条 MCP 会话）上。 */

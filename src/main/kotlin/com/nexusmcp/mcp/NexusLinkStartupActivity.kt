@@ -63,7 +63,6 @@ class NexusLinkStartupActivity : ProjectActivity {
             manager.remoteUnreal = LanHost.parseRemoteText(settings.remoteUnrealText)
 
             manager.sessionHub.writeGate = ProxySessionPolicy.parseWriteGate(settings.writeGate)
-            manager.sessionHub.onActivity = { refreshStatusBar(project) }
             manager.sessionHub.gatePrompter = { info ->
                 var decision = GateDecision.DENY
                 ApplicationManager.getApplication().invokeAndWait {

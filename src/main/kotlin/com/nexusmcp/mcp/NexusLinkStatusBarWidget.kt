@@ -73,16 +73,10 @@ class NexusLinkStatusBarWidget(private val project: Project) :
     override fun getText(): String {
         val manager = project.getUserData(NexusLinkStartupActivity.MANAGER_KEY)
             ?: return "⬡ Nexus"
-        val act = manager.sessionHub.getActivity()
-        if (act?.paused == true) return "⏸ Nexus 已暂停"
         return if (manager.connectedPort > 0) {
             val info = manager.instances.find { manager.isConnectedInfo(it) }
             val name = info?.projectName?.takeIf { it.isNotEmpty() } ?: "${manager.connectedHost}:${manager.connectedPort}"
-            val suffix = act?.capability?.takeIf { it.isNotEmpty() }?.let { cap ->
-                val id = act.identity.takeIf { it.isNotEmpty() }?.let { " " + it.take(24) } ?: ""
-                " · $cap$id"
-            } ?: ""
-            "⬢ $name$suffix"
+            "⬢ $name"
         } else {
             val count = manager.instances.size
             if (count > 0) "⬡ Nexus ($count)" else "⬡ Nexus"
@@ -108,12 +102,7 @@ class NexusLinkStatusBarWidget(private val project: Project) :
             "UE：未连接"
         }
         val pauseLine = if (manager.sessionHub.isPaused()) "Agent 转发：已暂停" else null
-        val act = manager.sessionHub.getActivity()
-        val actLine = if (act != null && !act.paused && act.capability.isNotEmpty()) {
-            if (act.identity.isNotEmpty()) "最近调用：${act.capability} → ${act.identity}"
-            else "最近调用：${act.capability}"
-        } else null
-        return listOfNotNull(serverLine, ueLine, pauseLine, actLine, "点击管理 UE 实例").joinToString("\n")
+        return listOfNotNull(serverLine, ueLine, pauseLine, "点击管理 UE 实例").joinToString("\n")
     }
 
     override fun getAlignment() = 0f

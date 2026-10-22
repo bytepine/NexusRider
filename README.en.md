@@ -59,6 +59,8 @@ The panel lets you pick a transport (Streamable HTTP / SSE) and a client (Cursor
 
 ### 4. Status bar
 
+The status bar always shows the current connection state. The tooltip also indicates when agent forwarding is paused.
+
 | Display | Meaning |
 |---------|---------|
 | **⬢ project name** | Connected to UE |

@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- ui: 移除状态栏和悬浮提示中的“最近调用”，状态栏始终显示连接状态；暂停提示保留在悬浮提示中
+
 ### Fixed
 
 - fix(proxy): 会话策略对齐 PascalCase Capability、参数、`SnapshotAt` / `TtlSeconds`，恢复只读缓存、危险写入确认和运行时 TTL；读缓存、section 缓存及断线快照按 UE host/port 隔离，重连与切换实例不会污染其他实例缓存，写入只失效对应实例；非法显式 `targetPort` 在缓存与写入确认之前返回 `-32602`，不会回落到当前实例
