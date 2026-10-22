@@ -64,7 +64,7 @@ The panel lets you pick a transport (Streamable HTTP / SSE) and a client (Cursor
 | **⬢ project name** | Connected to UE |
 | **⬡ Nexus** | Not connected |
 
-Click to switch instances. A single instance auto-connects; multiple instances prefer `hostKind=Editor` (legacy UE without that field falls back to `netRole=Editor`). Tool-list cache is kept across disconnects. The popup can pause/resume agent forwarding. Session contract: [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md).
+Click to switch instances. A single instance auto-connects; multiple instances prefer `hostKind=Editor` (legacy UE without that field falls back to `netRole=Editor`). Tool-list cache is kept across disconnects. Read caches and disconnected snapshots are isolated by UE host/port. The popup can pause/resume agent forwarding. Session contract: [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md).
 
 ---
 
@@ -124,6 +124,8 @@ That is NexusLink persist behavior, not this proxy. See the [usage-guide FAQ](ht
 ```
 
 Output: `build/distributions/*.zip`. Debug: `./gradlew runIde` (local Rider 2025.3 + JDK 21).
+
+Run `./gradlew testProxyPolicy` (`gradlew.bat testProxyPolicy` on Windows) before submitting. It checks the PascalCase contract and local HTTP/WebSocket multi-instance routing without launching Rider or UE. CI runs the same check before building.
 
 GitHub Release notes come only from `CHANGELOG.md` (`py scripts/extract_release_notes.py --version X.Y.Z --verify`). Tag: `nexus-rider-vX.Y.Z`. Record product changes in [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`.
 

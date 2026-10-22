@@ -57,6 +57,10 @@ class UnrealInstanceManager {
     var connectedHost: String = LanHost.LOOPBACK
         private set
 
+    /** 断线保留最近成功实例，仅复用同 host/port 的快照。 */
+    @Volatile var cacheScope: String = ""
+        private set
+
     var remoteUnreal: List<LanHost.RemoteUnreal> = emptyList()
 
     /** 当前连接的 UE 实例的工具列表模式（full/starter/custom），断连时重置为 "starter"。 */
@@ -433,6 +437,7 @@ class UnrealInstanceManager {
                 }
                 connectedPort = port
                 connectedHost = targetHost
+                cacheScope = LanHost.instanceKey(targetHost, port)
                 connectedToolsListMode = info.toolsListMode
                 // 启动应用层保活 ping（忙 5s / 闲 15s），替代库层 connectionLostTimeout
                 schedulePing()

@@ -16,6 +16,7 @@ import kotlin.concurrent.withLock
 data class CacheEntry(
     val exactKey: String,
     val identityKey: String,
+    val cacheScope: String,
     val capability: String,
     val identity: String,
     val sections: List<String>?,
@@ -131,13 +132,13 @@ class ProxySessionHub {
             val ttl = ProxySessionPolicy.extractTtlMeta(stored, info.capability, nowMs)
             synchronized(cacheLock) {
                 cache[info.exactKey] = CacheEntry(
-                    info.exactKey, info.identityKey, info.capability, info.identity, info.sections,
+                    info.exactKey, info.identityKey, info.cacheScope, info.capability, info.identity, info.sections,
                     JSONObject(stored.toString()), nowMs, ttl.snapshotAtIso, ttl.ttlMs,
                 )
             }
         }
         if (info.isWrite && info.identity.isNotEmpty()) {
-            invalidateIdentity(info.identity)
+            invalidateIdentity(info.identity, info.cacheScope)
         }
         return stored
     }
@@ -169,9 +170,9 @@ class ProxySessionHub {
         return ProxySessionPolicy.isDurableRead(cap)
     }
 
-    private fun invalidateIdentity(identity: String) {
+    private fun invalidateIdentity(identity: String, cacheScope: String) {
         synchronized(cacheLock) {
-            val keys = cache.filter { it.value.identity == identity }.keys.toList()
+            val keys = cache.filter { it.value.identity == identity && it.value.cacheScope == cacheScope }.keys.toList()
             keys.forEach { cache.remove(it) }
         }
     }

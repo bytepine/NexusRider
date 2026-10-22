@@ -64,7 +64,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 | **⬢ 项目名** | 已连接 UE |
 | **⬡ Nexus** | 未连接 |
 
-点击状态栏切换实例。唯一实例自动连接；多实例优先 `hostKind=Editor`（旧 UE 无该字段时改用 `netRole=Editor`）。断线保留工具列表缓存，重连后刷新。弹出的菜单可暂停/恢复 Agent 转发。会话层约定见 [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md)。
+点击状态栏切换实例。唯一实例自动连接；多实例优先 `hostKind=Editor`（旧 UE 无该字段时改用 `netRole=Editor`）。断线保留工具列表缓存，重连后刷新。读缓存与断线快照按 UE host/port 隔离，切换实例不会复用另一实例的数据。弹出的菜单可暂停/恢复 Agent 转发。会话层约定见 [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md)。
 
 ---
 
@@ -122,6 +122,8 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 ```bash
 ./gradlew buildPlugin    # Windows: gradlew.bat buildPlugin
 ```
+
+提交前运行 `./gradlew testProxyPolicy`（Windows：`gradlew.bat testProxyPolicy`），验证当前 PascalCase 契约与本地 HTTP/WebSocket 多实例转发。无需启动 Rider 或 UE，CI 构建前会执行同一检查。
 
 产物：`build/distributions/*.zip`。调试：`./gradlew runIde`（需本机 Rider 2025.3 + JDK 21）。
 

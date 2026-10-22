@@ -262,7 +262,7 @@ class NexusMcpDispatcher(
         }
         hub.beginCall(callInfo)
         try {
-            return forwardRemoteCall(id, params, toolName, proxyConfig, callInfo)
+            return forwardRemoteCall(id, params, toolName, proxyConfig)
         } finally {
             hub.endCall()
         }
@@ -284,28 +284,25 @@ class NexusMcpDispatcher(
         params: JSONObject,
         toolName: String,
         proxyConfig: ProxyConfig,
-        callInfo: CallInfo,
     ): String {
         val hub = unrealManager.sessionHub
+        val requestArgs = params.optJSONObject("arguments")
+        var callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
         val now = System.currentTimeMillis()
         hub.lookupFresh(callInfo, now)?.let { hit ->
             return makeResult(id, ProxySessionHub.wrapCached(hit.result, hit.kind, hit.snapshotAt))
         }
 
         // 可选 targetPort：一次性路由到指定实例，不改动长连接绑定
-        var targetPort = -1
+        val targetPort = ProxySessionPolicy.explicitTargetPort(requestArgs) ?: -1
         var targetHost = LanHost.LOOPBACK
         val forwardParams = JSONObject(params.toString())
         val args = forwardParams.optJSONObject("arguments")
-        if (args != null && args.has("targetPort")) {
-            val tp = args.optInt("targetPort", -1)
-            if (tp >= 1024) {
-                targetPort = tp
-                args.remove("targetPort")
-                if (args.has("targetHost")) {
-                    targetHost = args.optString("targetHost", LanHost.LOOPBACK)
-                    args.remove("targetHost")
-                }
+        if (args != null && targetPort > 0) {
+            args.remove("targetPort")
+            if (args.has("targetHost")) {
+                targetHost = args.optString("targetHost", LanHost.LOOPBACK)
+                args.remove("targetHost")
             }
         }
 
@@ -314,8 +311,10 @@ class NexusMcpDispatcher(
             unrealManager.forwardToolCallToPort(targetPort, forwardParams, host = targetHost)
         } else {
             unrealManager.ensureLongConnection()
+            callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
             var first = unrealManager.forwardToolCall(forwardParams)
             if (first.status == WsRequestStatus.DISCONNECTED && unrealManager.ensureLongConnection()) {
+                callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
                 unrealManager.forwardToolCall(forwardParams)
             } else {
                 first
@@ -355,6 +354,8 @@ class NexusMcpDispatcher(
         return if (response.has("result")) {
             val raw = response.optJSONObject("result")
                 ?: return makeError(id, INTERNAL_ERROR, "Invalid response from UE instance")
+            // 等待期间切换了长连接时，不将响应写入其他实例的缓存。
+            if (targetPort <= 0 && callInfo.cacheScope != unrealManager.cacheScope) return makeResult(id, raw)
             makeResult(id, hub.store(callInfo, raw, now))
         } else if (response.has("error")) {
             val err = response.getJSONObject("error")

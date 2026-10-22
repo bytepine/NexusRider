@@ -79,6 +79,17 @@ sourceSets {
     }
 }
 
+// 独立 JVM 契约检查，无需启动 Rider、UE 或引入测试框架。
+val testProxyPolicy = tasks.register<JavaExec>("testProxyPolicy") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.nexusmcp.mcp.ProxySessionPolicyTestKt")
+}
+
+tasks.named("check") {
+    dependsOn(testProxyPolicy)
+}
+
 tasks {
     wrapper {
         gradleVersion = "9.0.0"
