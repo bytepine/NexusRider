@@ -250,6 +250,9 @@ class NexusMcpDispatcher(
         }
 
         val args = params.optJSONObject("arguments")
+        if (args?.has("targetPort") == true && ProxySessionPolicy.explicitTargetPort(args) == null) {
+            return makeError(id, INVALID_PARAMS, "Invalid targetPort: expected an integer from 1024 to 65535.")
+        }
         val callInfo = ProxySessionPolicy.parseCall(toolName, args)
         val hub = unrealManager.sessionHub
         hub.waitIfPaused()

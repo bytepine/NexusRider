@@ -13,7 +13,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-/** 三端共同契约：PascalCase、host/port 隔离、section/degraded 与按实例失效。 */
+/** 独立契约源集：三端 PascalCase、host/port 隔离、section/degraded 与按实例失效。 */
 fun main() {
     fun query(port: Int, host: String = "", section: String = "All") = JSONObject()
         .put("Capability", "GetAssetBlueprint")
@@ -116,6 +116,18 @@ private fun testDispatcherRouting() {
             check(call("GetAssetBlueprint") == "A" && call("GetAssetBlueprint", b.port) == "B")
             check(manager.connectTo(b.port, true))
             check(call("GetAssetBlueprint") == "B" && b.calls.get() == 1) { "switch did not isolate default cache" }
+            val prompts = AtomicInteger()
+            manager.sessionHub.gatePrompter = { prompts.incrementAndGet(); GateDecision.ALLOW }
+            for (port in listOf(-1, 0, 1023, 65536, 45000.5, "45000", JSONObject.NULL, true)) {
+                for (capability in listOf("GetAssetBlueprint", "ManageAssetBlueprint", "DeleteAsset")) {
+                    val args = JSONObject().put("Capability", capability).put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP")).put("targetPort", port)
+                    val request = JSONObject().put("jsonrpc", "2.0").put("id", 3).put("method", "tools/call")
+                        .put("params", JSONObject().put("name", "CallCapability").put("arguments", args))
+                    val response = JSONObject(dispatcher.dispatch(request.toString()))
+                    check(response.optJSONObject("error")?.optInt("code") == -32602) { "invalid explicit target must be rejected: $response" }
+                }
+            }
+            check(a.calls.get() == 1 && b.calls.get() == 1 && prompts.get() == 0) { "invalid targets must not forward, serve cached reads, or prompt" }
             call("ManageAssetBlueprint")
             check(call("GetAssetBlueprint", a.port) == "A" && a.calls.get() == 1) { "write B invalidated A" }
             check(call("GetAssetBlueprint") == "B" && b.calls.get() == 3) { "write B did not invalidate B" }

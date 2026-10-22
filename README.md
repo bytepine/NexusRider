@@ -89,7 +89,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 旧版 MCP 客户端可用 `http://127.0.0.1:6800/sse`。CodeBuddy / Windsurf 在设置面板选对应客户端后再复制。
 
-已连接时 `tools/list` 合并 UE 工具。多实例并发可在 `arguments` 中带 `targetPort`（一次性 WS，不改长连接绑定）。
+已连接时 `tools/list` 合并 UE 工具。多实例并发可在 `arguments` 中带 `targetPort`（一次性 WS，不改长连接绑定），须为 1024–65535 的整数；非法显式端口返回 `-32602`，不会转发到当前实例或返回缓存。
 
 ---
 
@@ -123,7 +123,7 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 ./gradlew buildPlugin    # Windows: gradlew.bat buildPlugin
 ```
 
-提交前运行 `./gradlew testProxyPolicy`（Windows：`gradlew.bat testProxyPolicy`），验证当前 PascalCase 契约与本地 HTTP/WebSocket 多实例转发。无需启动 Rider 或 UE，CI 构建前会执行同一检查。
+提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发及非法目标拒绝；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
 
 产物：`build/distributions/*.zip`。调试：`./gradlew runIde`（需本机 Rider 2025.3 + JDK 21）。
 

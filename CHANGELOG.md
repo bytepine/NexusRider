@@ -9,8 +9,8 @@
 
 ### Fixed
 
-- fix(proxy): 会话策略对齐 PascalCase Capability、参数、`SnapshotAt` / `TtlSeconds`，恢复只读缓存、危险写入确认和运行时 TTL；读缓存、section 缓存及断线快照按 UE host/port 隔离，重连与切换实例不会污染其他实例缓存，写入只失效对应实例
-- fix(test): 新增无需 Rider/UE 的 JVM 会话契约与本地 HTTP/WebSocket 转发回归，CI 构建前必须通过 `testProxyPolicy`
+- fix(proxy): 会话策略对齐 PascalCase Capability、参数、`SnapshotAt` / `TtlSeconds`，恢复只读缓存、危险写入确认和运行时 TTL；读缓存、section 缓存及断线快照按 UE host/port 隔离，重连与切换实例不会污染其他实例缓存，写入只失效对应实例；非法显式 `targetPort` 在缓存与写入确认之前返回 `-32602`，不会回落到当前实例
+- fix(test): 新增无需 Rider/UE 的 JVM 会话契约、本地 HTTP/WebSocket 转发及非法目标读写拒绝回归；独立 `contract` 源集通过 `testProxyPolicy` 接入标准 `check`，避免标准 `test` 因 main 入口无法发现框架测试而失败，CI 执行 `check buildPlugin`
 
 ## [2.1.1] - 2026-10-08
 

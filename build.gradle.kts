@@ -79,10 +79,17 @@ sourceSets {
     }
 }
 
+// main 入口属于独立源集，避免标准 test 将它视为待发现的框架测试。
+val contract = sourceSets.create("contract") {
+    compileClasspath += sourceSets.main.get().output + sourceSets.main.get().compileClasspath
+    // 独立 JVM 也需要通常由 Rider 提供的 Kotlin 等编译期依赖。
+    runtimeClasspath += compileClasspath + sourceSets.main.get().runtimeClasspath
+}
+
 // 独立 JVM 契约检查，无需启动 Rider、UE 或引入测试框架。
 val testProxyPolicy = tasks.register<JavaExec>("testProxyPolicy") {
-    dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets["test"].runtimeClasspath
+    dependsOn(tasks.named(contract.classesTaskName))
+    classpath = contract.runtimeClasspath
     mainClass.set("com.nexusmcp.mcp.ProxySessionPolicyTestKt")
 }
 
