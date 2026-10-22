@@ -9,12 +9,17 @@ import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
 import java.net.InetSocketAddress
+import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /** 独立契约源集：三端 PascalCase、host/port 隔离、section/degraded 与按实例失效。 */
 fun main() {
+    val testRoot = Files.createTempDirectory("nexus-policy-test-").toFile()
+    System.setProperty("java.io.tmpdir", testRoot.absolutePath)
+    Runtime.getRuntime().addShutdownHook(Thread { testRoot.deleteRecursively() })
+    testLegacyV2Compatibility()
     fun query(port: Int, host: String = "", section: String = "All") = JSONObject()
         .put("Capability", "GetAssetBlueprint")
         .put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP").put("Sections", JSONArray(listOf(section))))
@@ -55,8 +60,75 @@ fun main() {
         check(ProxySessionPolicy.explicitTargetPort(JSONObject().put("targetPort", port)) == null)
     }
     check(ProxySessionPolicy.parseCall("CallCapability", JSONObject().put("Calls", JSONArray())).isBatch)
+    val failure = JSONObject().put("isError", true).put("content", JSONArray().put(JSONObject().put("type", "text").put("text", "temporary failure")))
+    for (result in listOf(payload, failure)) {
+        hub.store(a, payload, 1000)
+        hub.store(b, payload, 1000)
+        val batch = ProxySessionPolicy.parseCall("CallCapability", JSONObject().put("targetPort", 45000)
+            .put("Calls", JSONArray().put(JSONObject().put("Capability", "ManageAssetBlueprint").put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP")))))
+        hub.store(batch, result, 1100)
+        check(hub.lookupFresh(a, 1200) == null && hub.lookupDegraded(a, 100000) == null && hub.lookupFresh(b, 1200) != null) {
+            "batch must invalidate only its instance, including partial failure"
+        }
+    }
+    hub.store(a, failure, 1000)
+    check(hub.lookupFresh(a, 1100) == null && hub.lookupDegraded(a, 100000) == null) { "failed reads must not be cached" }
+    val large = JSONObject().put("isError", false).put("content", JSONArray().put(JSONObject().put("type", "text")
+        .put("text", JSONObject().put("payload", "x".repeat(50000)).put("TtlSeconds", 1).toString())))
+    val offloadCall = ProxySessionPolicy.parseCall("GetAssetBlueprint", JSONObject().put("AssetPath", "/synthetic/BP").put("targetPort", 45000))
+    fun offloadPath(value: JSONObject) = java.io.File(JSONObject(value.getJSONArray("content").getJSONObject(0).getString("text")).getString("path"))
+    val file = offloadPath(hub.store(offloadCall, large, 1000))
+    val stale = offloadPath(hub.store(offloadCall, large, 1000))
+    check(file != stale) { "payload filenames must not collide" }
+    check(stale.setLastModified(System.currentTimeMillis() - 7200000))
+    val otherHub = ProxySessionHub()
+    check(file.isFile && !stale.exists()) { "new hub must keep fresh payloads and prune expired nested files" }
+    val otherFile = offloadPath(otherHub.store(offloadCall, large, 1000))
+    check(file.parentFile != otherFile.parentFile && file.readText() == large.toString()) { "offload directories must be isolated" }
+    val legacyRoot = testRoot.resolve("nexus-mcp-offload")
+    check(legacyRoot.mkdirs())
+    legacyRoot.resolve("old.json").writeText("old")
+    legacyRoot.listFiles()?.forEach { it.deleteRecursively() }
+    check(!file.toPath().startsWith(legacyRoot.toPath()) && file.isFile) { "old 2.x startup cleanup must not touch new payloads" }
+    check(hub.lookupFresh(offloadCall, 2001) == null) { "offloading must preserve TTL metadata" }
+    val largeFailure = JSONObject(large.toString()).put("isError", true)
+    check(otherHub.store(b, largeFailure, 1000).toString() == largeFailure.toString()) { "large errors must not be replaced with successful file summaries" }
+    check(otherHub.lookupFresh(b, 1100) == null)
     testDispatcherRouting()
     println("proxy policy contract OK")
+}
+
+/** 已发布 2.x 的名称、业务参数和元数据只在策略层解析，不改写请求。 */
+private fun testLegacyV2Compatibility() {
+    val args = JSONObject().put("capability", "get_asset_blueprint")
+        .put("arguments", JSONObject().put("assetPath", "/synthetic/BP").put("sections", JSONArray(listOf("all")))).put("targetPort", 45000)
+    val before = args.toString()
+    val read = ProxySessionPolicy.parseCall("call_capability", args)
+    check(!read.isWrite && read.identity == "/synthetic/BP")
+    check(!ProxySessionPolicy.needsGate(WriteGateMode.ALL, read.capability, read.innerArgs))
+    check(!ProxySessionPolicy.isWriteCapability("get_asset_blueprint"))
+    check(ProxySessionPolicy.defaultTtlMs("get_output_log") == 8000L && ProxySessionPolicy.defaultTtlMs("search_asset") == 60000L)
+    check(ProxySessionPolicy.isDurableRead("get_asset_blueprint") && !ProxySessionPolicy.isDurableRead("list_runtime_actors"))
+    check(ProxySessionPolicy.needsGate(WriteGateMode.DESTRUCTIVE, "delete_asset", JSONObject()))
+    check(ProxySessionPolicy.needsGate(WriteGateMode.DESTRUCTIVE, "rename_asset", JSONObject()))
+    check(ProxySessionPolicy.needsGate(WriteGateMode.DESTRUCTIVE, "control_pie", JSONObject().put("action", "stop").put("Action", "start")))
+    check(ProxySessionPolicy.needsGate(WriteGateMode.DESTRUCTIVE, "manage_asset_blueprint", JSONObject().put("operations", JSONArray().put(JSONObject().put("action", "remove_node")))))
+    val conflicting = ProxySessionPolicy.parseCall("call_capability", JSONObject().put("capability", "delete_asset").put("Capability", "GetAssetBlueprint"))
+    check(ProxySessionPolicy.needsGate(WriteGateMode.DESTRUCTIVE, conflicting.capability, conflicting.innerArgs))
+    val payload = JSONObject().put("content", JSONArray().put(JSONObject().put("type", "text").put("text", """{"_ttl_seconds":1,"_snapshotAt":"2026-10-22T00:00:00Z"}""")))
+    val hub = ProxySessionHub()
+    hub.store(read, payload, 1000)
+    val ttl = ProxySessionPolicy.extractTtlMeta(payload, read.capability, 1000)
+    check(ttl.ttlMs == 1000L && ttl.snapshotAtIso == "2026-10-22T00:00:00Z")
+    val subset = ProxySessionPolicy.parseCall("call_capability", JSONObject(args.toString()).put("arguments", JSONObject().put("assetPath", "/synthetic/BP").put("sections", JSONArray(listOf("defaults")))))
+    check(hub.lookupFresh(subset, 1100)?.kind == CacheKind.SECTION_HIT)
+    check(hub.lookupFresh(read, 32000) == null && hub.lookupDegraded(read, 100000) != null)
+    val modern = ProxySessionPolicy.parseCall("CallCapability", JSONObject().put("Capability", "GetAssetBlueprint").put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP")).put("targetPort", 45000))
+    check(hub.lookupFresh(modern, 1100) == null) { "different wire formats must not share cached response shapes" }
+    val batch = ProxySessionPolicy.parseCall("call_capability", JSONObject().put("targetPort", 45000).put("calls", JSONArray().put(JSONObject().put("capability", "manage_asset_blueprint").put("arguments", JSONObject().put("assetPath", "/synthetic/BP")))))
+    hub.store(batch, JSONObject(), 1200)
+    check(batch.isBatch && hub.lookupFresh(read, 1300) == null)
+    check(args.toString() == before) { "policy parsing must not mutate wire arguments" }
 }
 
 /** 本地 HTTP/WS 协议替身，验证真实 Manager 与 Dispatcher，不启动 UE。 */

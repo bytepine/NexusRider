@@ -43,7 +43,7 @@ object ProxySessionPolicy {
     const val DEGRADED_NOTE =
         "UE editor unreachable (compile/restart?). Serving last snapshot. Do not loop list_unreal_instances."
 
-    private val destructiveCaps = setOf("DeleteAsset", "RenameAsset")
+    private val destructiveCaps = setOf("deleteasset", "renameasset")
     private val stopPie = setOf("stop", "end", "quit", "endplay", "end_play", "end-play")
 
     fun parseWriteGate(raw: String?): WriteGateMode = when (raw) {
@@ -58,22 +58,35 @@ object ProxySessionPolicy {
         WriteGateMode.DESTRUCTIVE -> "destructive"
     }
 
+    // 仅供本地策略判断；保留原始工具名和参数，原样转发给对应版本。
+    private fun policyName(name: String): String = name.replace("_", "").lowercase()
+
+    private fun policyField(args: JSONObject, key: String, legacy: Boolean = false): Any? {
+        val camel = key.replaceFirstChar { it.lowercase() }
+        val primary = if (legacy) camel else key
+        return if (args.has(primary)) args.opt(primary) else args.opt(if (legacy) key else camel)
+    }
+
     fun isWriteCapability(cap: String): Boolean {
         if (cap.isEmpty()) return false
-        if (cap == "SubmitFeedback" || cap == "SearchCapabilities") return false
-        if (cap.startsWith("Get") || cap.startsWith("List") || cap.startsWith("Search")) return false
+        val name = policyName(cap)
+        if (name == "submitfeedback" || name == "searchcapabilities") return false
+        if (name.startsWith("get") || name.startsWith("list") || name.startsWith("search")) return false
         return true
     }
 
     fun isDestructive(cap: String, inner: JSONObject): Boolean {
-        if (cap in destructiveCaps) return true
-        if (cap == "ControlPie") {
-            return inner.optString("Action").lowercase() in stopPie
+        val name = policyName(cap)
+        val legacy = cap.contains('_')
+        if (name in destructiveCaps) return true
+        if (name == "controlpie") {
+            return (policyField(inner, "Action", legacy) as? String)?.lowercase() in stopPie
         }
-        if (cap.startsWith("Manage")) {
-            val ops = inner.optJSONArray("Operations") ?: return false
+        if (name.startsWith("manage")) {
+            val ops = policyField(inner, "Operations", legacy) as? JSONArray ?: return false
             for (i in 0 until ops.length()) {
-                val action = ops.optJSONObject(i)?.optString("Action")?.lowercase() ?: continue
+                val op = ops.optJSONObject(i) ?: continue
+                val action = (policyField(op, "Action", legacy) as? String)?.lowercase() ?: continue
                 if (action.contains("delete") || action.contains("remove") || action == "destroy") return true
             }
         }
@@ -86,32 +99,35 @@ object ProxySessionPolicy {
         WriteGateMode.DESTRUCTIVE -> isDestructive(cap, inner)
     }
 
-    fun isVolatileCap(cap: String): Boolean =
-        cap == "GetOutputLog" || cap == "CaptureViewport" ||
-            cap.startsWith("ListRuntime") || cap.startsWith("GetRuntime")
+    fun isVolatileCap(cap: String): Boolean {
+        val name = policyName(cap)
+        return name == "getoutputlog" || name == "captureviewport" ||
+            name.startsWith("listruntime") || name.startsWith("getruntime")
+    }
 
     fun isDurableRead(cap: String): Boolean {
         if (isWriteCapability(cap) || isVolatileCap(cap)) return false
-        return cap.startsWith("Search") || cap.startsWith("GetAsset") || cap.startsWith("GetEditor") ||
-            cap == "GetGameplayTags" || cap == "GetAssetRefs" || cap == "GetAssetLuaBinding"
+        val name = policyName(cap)
+        return name.startsWith("search") || name.startsWith("getasset") || name.startsWith("geteditor") ||
+            name == "getgameplaytags" || name == "getassetrefs" || name == "getassetluabinding"
     }
 
     fun defaultTtlMs(cap: String): Long = when {
         isVolatileCap(cap) -> DEFAULT_VOLATILE_TTL_MS
-        cap.startsWith("Search") -> DEFAULT_SEARCH_TTL_MS
+        policyName(cap).startsWith("search") -> DEFAULT_SEARCH_TTL_MS
         else -> DEFAULT_READ_TTL_MS
     }
 
-    fun extractIdentity(args: JSONObject): String {
+    fun extractIdentity(args: JSONObject, legacy: Boolean = false): String {
         for (key in listOf("AssetPath", "ActorName", "WidgetName", "LuaPath", "ScriptPath")) {
-            val v = args.optString(key, "")
+            val v = policyField(args, key, legacy) as? String ?: continue
             if (v.isNotEmpty()) return v
         }
         return ""
     }
 
-    fun extractSections(args: JSONObject): List<String>? {
-        val raw = args.optJSONArray("Sections") ?: return null
+    fun extractSections(args: JSONObject, legacy: Boolean = false): List<String>? {
+        val raw = policyField(args, "Sections", legacy) as? JSONArray ?: return null
         val out = mutableListOf<String>()
         for (i in 0 until raw.length()) {
             raw.optString(i).takeIf { it.isNotEmpty() }?.let { out.add(it) }
@@ -121,7 +137,7 @@ object ProxySessionPolicy {
 
     fun sectionsCovered(cached: List<String>?, requested: List<String>?): Boolean {
         if (cached == null) return false
-        if (cached.contains("All")) return true
+        if (cached.any { it.equals("All", ignoreCase = true) }) return true
         if (requested.isNullOrEmpty()) return false
         return requested.all { it in cached }
     }
@@ -147,17 +163,19 @@ object ProxySessionPolicy {
         // 仅剥离顶层路由字段；能力内的同名字段仍参与缓存键。
         var inner = JSONObject(top.toString()).apply { remove("targetPort"); remove("targetHost") }
         var isBatch = false
-        if (toolName == "CallCapability") {
-            if (top.optJSONArray("Calls") != null) {
+        if (policyName(toolName) == "callcapability") {
+            val legacy = toolName.contains('_')
+            if (policyField(top, "Calls", legacy) is JSONArray) {
                 isBatch = true
-                capability = "CallCapability.Calls"
+                capability = "$toolName.Calls"
             } else {
-                capability = top.optString("Capability", "")
-                inner = top.optJSONObject("Arguments") ?: JSONObject()
+                capability = policyField(top, "Capability", legacy) as? String ?: ""
+                inner = policyField(top, "Arguments", legacy) as? JSONObject ?: JSONObject()
             }
         }
-        val identity = extractIdentity(inner)
-        val sections = extractSections(inner)
+        val legacy = capability.contains('_')
+        val identity = extractIdentity(inner, legacy)
+        val sections = extractSections(inner, legacy)
         val exactKey = JSONArray(listOf(cacheScope, toolName, capability, stableJson(inner))).toString()
         val identityKey = JSONArray(listOf(cacheScope, capability, identity)).toString()
         return CallInfo(
@@ -171,7 +189,7 @@ object ProxySessionPolicy {
         val src = resultTextObject(result) ?: result
         var snapshotAtMs = nowMs
         var snapshotAtIso = java.time.Instant.ofEpochMilli(nowMs).toString()
-        val snap = src.optString("SnapshotAt", "")
+        val snap = src.optString("SnapshotAt", src.optString("_snapshotAt", ""))
         if (snap.isNotEmpty()) {
             try {
                 snapshotAtMs = java.time.Instant.parse(snap).toEpochMilli()
@@ -179,8 +197,9 @@ object ProxySessionPolicy {
             } catch (_: Exception) { /* 保留 now */ }
         }
         var ttlMs = defaultTtlMs(cap)
-        if (src.has("TtlSeconds")) {
-            val sec = src.optDouble("TtlSeconds", -1.0)
+        val ttlKey = if (src.has("TtlSeconds")) "TtlSeconds" else "_ttl_seconds"
+        if (src.has(ttlKey)) {
+            val sec = src.optDouble(ttlKey, -1.0)
             if (sec > 0) ttlMs = (sec * 1000).toLong()
         }
         return TtlMeta(snapshotAtMs, ttlMs, snapshotAtIso)

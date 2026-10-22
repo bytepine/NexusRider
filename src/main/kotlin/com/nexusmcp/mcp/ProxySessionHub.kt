@@ -5,8 +5,10 @@ package com.nexusmcp.mcp
 import org.json.JSONObject
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.attribute.PosixFilePermission
 import java.util.LinkedHashMap
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -48,9 +50,10 @@ class ProxySessionHub {
             size > ProxySessionPolicy.MAX_CACHE_ENTRIES
     }
     private val cacheLock = Any()
+    private val offloadDir = File(offloadRoot, UUID.randomUUID().toString())
 
     init {
-        purgeOffload()
+        pruneOffload()
     }
 
     fun isPaused(): Boolean = paused
@@ -97,20 +100,24 @@ class ProxySessionHub {
 
     fun store(info: CallInfo, result: JSONObject, nowMs: Long): JSONObject {
         var stored = JSONObject(result.toString())
+        // 批量操作可能部分成功，先失效目标实例，避免保留旧快照。
+        if (info.isBatch) {
+            invalidateIdentity("", info.cacheScope)
+        } else if (info.isWrite && info.identity.isNotEmpty()) {
+            invalidateIdentity(info.identity, info.cacheScope)
+        }
+        if (stored.optBoolean("isError", false)) return stored
+        val ttl = ProxySessionPolicy.extractTtlMeta(stored, info.capability, nowMs)
         if (ProxySessionPolicy.contentTextLength(stored) > ProxySessionPolicy.OFFLOAD_CHARS) {
             stored = offload(stored)
         }
         if (!info.isWrite && !info.isBatch && info.capability.isNotEmpty()) {
-            val ttl = ProxySessionPolicy.extractTtlMeta(stored, info.capability, nowMs)
             synchronized(cacheLock) {
                 cache[info.exactKey] = CacheEntry(
                     info.exactKey, info.identityKey, info.cacheScope, info.capability, info.identity, info.sections,
                     JSONObject(stored.toString()), nowMs, ttl.snapshotAtIso, ttl.ttlMs,
                 )
             }
-        }
-        if (info.isWrite && info.identity.isNotEmpty()) {
-            invalidateIdentity(info.identity, info.cacheScope)
         }
         return stored
     }
@@ -144,22 +151,27 @@ class ProxySessionHub {
 
     private fun invalidateIdentity(identity: String, cacheScope: String) {
         synchronized(cacheLock) {
-            val keys = cache.filter { it.value.identity == identity && it.value.cacheScope == cacheScope }.keys.toList()
+            val keys = cache.filter { it.value.cacheScope == cacheScope && (identity.isEmpty() || it.value.identity == identity) }.keys.toList()
             keys.forEach { cache.remove(it) }
         }
     }
 
     private fun offload(result: JSONObject): JSONObject {
         pruneOffload()
-        val dir = offloadRoot
+        val dir = offloadDir
         dir.mkdirs()
         tryPosix(dir, setOf(
             PosixFilePermission.OWNER_READ,
             PosixFilePermission.OWNER_WRITE,
             PosixFilePermission.OWNER_EXECUTE,
         ))
-        val file = File(dir, "offload-${System.currentTimeMillis()}.json")
-        file.writeText(result.toString())
+        val file = File(dir, "offload-${UUID.randomUUID()}.json")
+        try {
+            file.writeText(result.toString())
+        } catch (_: java.io.IOException) {
+            file.delete()
+            return result
+        }
         tryPosix(file, setOf(
             PosixFilePermission.OWNER_READ,
             PosixFilePermission.OWNER_WRITE,
@@ -176,7 +188,7 @@ class ProxySessionHub {
     }
 
     companion object {
-        private val offloadRoot = File(System.getProperty("java.io.tmpdir"), "nexus-mcp-offload")
+        private val offloadRoot = File(System.getProperty("java.io.tmpdir"), "nexus-mcp-offload-v2")
         private const val OFFLOAD_MAX_AGE_MS = 3_600_000L
 
         private fun tryPosix(file: File, perms: Set<PosixFilePermission>) {
@@ -187,16 +199,14 @@ class ProxySessionHub {
             }
         }
 
-        private fun purgeOffload() {
-            val dir = offloadRoot
-            if (!dir.isDirectory) return
-            dir.listFiles()?.forEach { it.deleteRecursively() }
-        }
-
-        private fun pruneOffload() {
-            val cutoff = System.currentTimeMillis() - OFFLOAD_MAX_AGE_MS
-            offloadRoot.listFiles()?.forEach { f ->
-                if (f.lastModified() < cutoff) f.deleteRecursively()
+        private fun pruneOffload(dir: File = offloadRoot, cutoff: Long = System.currentTimeMillis() - OFFLOAD_MAX_AGE_MS) {
+            dir.listFiles()?.forEach { file ->
+                if (Files.isDirectory(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                    pruneOffload(file, cutoff)
+                    file.delete() // 仅删除空目录，保留其他实例的新文件。
+                } else if (file.lastModified() < cutoff) {
+                    file.delete()
+                }
             }
         }
 

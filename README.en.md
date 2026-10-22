@@ -61,6 +61,10 @@ The panel lets you pick a transport (Streamable HTTP / SSE) and a client (Cursor
 
 The status bar always shows the current connection state. The tooltip also indicates when agent forwarding is paused.
 
+Batch calls, including partial failures, invalidate the target instance's read cache. Failed reads are never cached. Large-response files are isolated between hubs; only files older than one hour are cleaned up.
+
+Released 2.x and current tool-call formats are supported without rewriting requests. New payloads use a separate temporary root so older 2.x processes cannot delete them during startup cleanup.
+
 | Display | Meaning |
 |---------|---------|
 | **⬢ project name** | Connected to UE |
