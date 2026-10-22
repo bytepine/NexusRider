@@ -16,10 +16,12 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /** 独立契约源集：三端 PascalCase、host/port 隔离、section/degraded 与按实例失效。 */
 fun main() {
-    testDiagnostics()
     val testRoot = Files.createTempDirectory("nexus-policy-test-").toFile()
     System.setProperty("java.io.tmpdir", testRoot.absolutePath)
+    System.setProperty("idea.log.path", testRoot.resolve("logs").absolutePath)
     Runtime.getRuntime().addShutdownHook(Thread { testRoot.deleteRecursively() })
+    testDiagnostics()
+    testStartupLogs(testRoot.resolve("startup-logs").toPath())
     testLegacyV2Compatibility()
     fun query(port: Int, host: String = "", section: String = "All") = JSONObject()
         .put("Capability", "GetAssetBlueprint")

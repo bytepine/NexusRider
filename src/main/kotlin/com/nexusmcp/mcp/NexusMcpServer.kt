@@ -2,7 +2,7 @@
 
 package com.nexusmcp.mcp
 
-import com.intellij.openapi.diagnostic.logger
+import com.nexusmcp.mcp.nexusLogger as logger
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.*
@@ -186,7 +186,7 @@ private class McpHttpHandler(
     private val onSessionReady: () -> Unit,
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
-    private val log = com.intellij.openapi.diagnostic.logger<McpHttpHandler>()
+    private val log = logger<McpHttpHandler>()
 
     override fun channelRead0(ctx: ChannelHandlerContext, request: FullHttpRequest) {
         val origin = request.headers().get(HttpHeaderNames.ORIGIN)

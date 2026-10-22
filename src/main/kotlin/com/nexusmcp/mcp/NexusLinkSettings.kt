@@ -7,7 +7,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
-import com.intellij.openapi.diagnostic.logger
+import com.nexusmcp.mcp.nexusLogger as logger
 import kotlin.math.max
 import kotlin.math.min
 

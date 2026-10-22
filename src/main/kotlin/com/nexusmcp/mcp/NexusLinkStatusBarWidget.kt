@@ -3,6 +3,7 @@
 package com.nexusmcp.mcp
 
 import com.intellij.openapi.Disposable
+import com.intellij.ide.actions.RevealFileAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.ListPopup
 import com.intellij.openapi.ui.popup.PopupStep
@@ -91,7 +92,7 @@ class NexusLinkStatusBarWidget(private val project: Project) :
             "MCP 服务器：未运行"
 
         val manager = project.getUserData(NexusLinkStartupActivity.MANAGER_KEY)
-            ?: return "$serverLine\nUE：未初始化"
+            ?: return "$serverLine\nUE：未初始化\n点击打开日志目录"
 
         val ueLine = if (manager.connectedPort > 0) {
             val info = manager.instances.find { manager.isConnectedInfo(it) }
@@ -102,7 +103,7 @@ class NexusLinkStatusBarWidget(private val project: Project) :
             "UE：未连接"
         }
         val pauseLine = if (manager.sessionHub.isPaused()) "Agent 转发：已暂停" else null
-        return listOfNotNull(serverLine, ueLine, pauseLine, "点击管理 UE 实例").joinToString("\n")
+        return listOfNotNull(serverLine, ueLine, pauseLine, "点击管理 UE 实例 / 打开日志目录").joinToString("\n")
     }
 
     override fun getAlignment() = 0f
@@ -113,8 +114,8 @@ class NexusLinkStatusBarWidget(private val project: Project) :
 
     /** 弹出 UE 实例选择列表，末尾始终附带"刷新搜索"选项。 */
     private fun showInstancePopup(event: MouseEvent) {
-        val manager = project.getUserData(NexusLinkStartupActivity.MANAGER_KEY) ?: return
-        val instances = manager.instances.toList()
+        val manager = project.getUserData(NexusLinkStartupActivity.MANAGER_KEY)
+        val instances = manager?.instances?.toList().orEmpty()
 
         val items = mutableListOf<PopupItem>()
 
@@ -125,10 +126,10 @@ class NexusLinkStatusBarWidget(private val project: Project) :
             instances.forEach { info ->
                 val name = info.projectName.ifEmpty { "${info.host}:${info.port}" }
                 val ver = if (info.engineVersion.isNotEmpty()) "   UE ${info.engineVersion}" else ""
-                val mark = if (manager.isConnectedInfo(info)) "  ✓" else ""
+                val mark = if (manager?.isConnectedInfo(info) == true) "  ✓" else ""
                 items.add(PopupItem("$name$ver   ${info.host}:${info.port}$mark") {
                     AppExecutorUtil.getAppExecutorService().submit {
-                        manager.connectTo(info.port, setPreferred = true, host = info.host)
+                        manager?.connectTo(info.port, setPreferred = true, host = info.host)
                         statusBar?.updateWidget(WIDGET_ID)
                     }
                 })
@@ -136,7 +137,7 @@ class NexusLinkStatusBarWidget(private val project: Project) :
         }
 
         // 已连接时提供断开选项（与 VSCode 对齐）
-        if (manager.connectedPort > 0) {
+        if (manager != null && manager.connectedPort > 0) {
             items.add(PopupItem("⊘  断开连接") {
                 AppExecutorUtil.getAppExecutorService().submit {
                     manager.disconnect()
@@ -145,12 +146,12 @@ class NexusLinkStatusBarWidget(private val project: Project) :
             })
         }
 
-        if (manager.sessionHub.isPaused()) {
+        if (manager != null && manager.sessionHub.isPaused()) {
             items.add(PopupItem("▶  恢复 Agent 转发") {
                 manager.sessionHub.setPaused(false)
                 statusBar?.updateWidget(WIDGET_ID)
             })
-        } else {
+        } else if (manager != null) {
             items.add(PopupItem("⏸  暂停 Agent 转发") {
                 manager.sessionHub.setPaused(true)
                 statusBar?.updateWidget(WIDGET_ID)
@@ -158,10 +159,18 @@ class NexusLinkStatusBarWidget(private val project: Project) :
         }
 
         // 末尾始终提供手动刷新，让用户不依赖 5 秒定时器
-        items.add(PopupItem("⟳  刷新搜索") {
+        if (manager != null) items.add(PopupItem("⟳  刷新搜索") {
             AppExecutorUtil.getAppExecutorService().submit {
                 manager.discoverInstances()
                 statusBar?.updateWidget(WIDGET_ID)
+            }
+        })
+
+        items.add(PopupItem("▤  打开日志目录") {
+            try {
+                RevealFileAction.openDirectory(NexusLog.directory())
+            } catch (e: Exception) {
+                NexusLinkStartupActivity.notifyError(project, "无法打开日志目录：${e.javaClass.simpleName}；可通过 Help → Show Log 查看 idea.log")
             }
         })
 

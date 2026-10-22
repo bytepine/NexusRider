@@ -2,7 +2,7 @@
 
 package com.nexusmcp.mcp
 
-import com.intellij.openapi.diagnostic.logger
+import com.nexusmcp.mcp.nexusLogger as logger
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection

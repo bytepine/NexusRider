@@ -3,7 +3,7 @@
 package com.nexusmcp.mcp
 
 import org.json.JSONObject
-import com.intellij.openapi.diagnostic.logger
+import com.nexusmcp.mcp.nexusLogger as logger
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption

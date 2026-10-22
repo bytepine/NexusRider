@@ -115,7 +115,7 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 
 ### 查看日志
 
-通过 **Help → Show Log in Explorer/Finder** 打开日志目录，提供对应时段的 `idea.log`；可搜索 `com.nexusmcp` 或 `MCP`。
+点击 **Nexus 状态栏 → 打开日志目录**，代理未启用时也可使用。目录中的 `nexus-rider_<启动时间>_pid<进程ID>_<分段>_*.log` 每次 IDE/插件启动新建，超过 4 MiB 后继续写新分段，旧文件保留；所有项目窗口共用本次启动的日志。目录位于 Rider 日志目录下的 `NexusMCP/`，原有 `idea.log` 同时保留，可通过 **Help → Show Log in Explorer/Finder** 查看。
 
 默认 INFO/WARN 即记录客户端版本、会话创建与握手、失效或淘汰、HTTP 拒绝、SSE 通断、调用开始/完成/耗时与失败，以及服务器停止原因和连接恢复。`session` 是会话摘要，`request` 是本次服务器运行内的请求编号；`missing_session` / `unknown_session` 区分缺少 ID 与 ID 已不存在，`session_limit` / `waiting_for_initialize` 标明清理原因。Token、完整会话 ID、工具参数和响应正文不写入日志。
 

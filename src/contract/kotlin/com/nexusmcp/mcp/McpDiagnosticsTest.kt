@@ -3,6 +3,8 @@
 package com.nexusmcp.mcp
 
 import org.json.JSONObject
+import java.nio.file.Files
+import java.nio.file.Path
 
 internal fun testDiagnostics() {
     // 与 Desktop / VSCode 使用同一摘要格式，完整 ID 与正文不得进入诊断字段。
@@ -20,4 +22,24 @@ internal fun testDiagnostics() {
     check(McpDiagnostics.failure("""{"result":{}}""") == null)
     check(McpDiagnostics.failure("") == null)
     println("diagnostics redaction contract OK")
+}
+
+internal fun testStartupLogs(directory: Path) {
+    val first = StartupLog(directory, "nexus-rider")
+    first.write("INFO", "first startup")
+    val firstFile = first.file
+    val before = Files.readString(firstFile)
+    val second = StartupLog(directory, "nexus-rider")
+    second.write("INFO", "second startup")
+    check(firstFile != second.file && Files.readString(firstFile) == before)
+    check(!Files.readString(second.file).contains("first startup"))
+    first.write("INFO", "x".repeat(4 * 1024 * 1024))
+    first.write("INFO", "after rotation")
+    check(first.file != firstFile && Files.exists(firstFile))
+    check(Files.readString(first.file).contains("after rotation"))
+    nexusLogger<StartupLog>().info("startup mirror marker")
+    check(Files.list(NexusLog.directory()).use { files ->
+        files.anyMatch { Files.readString(it).contains("startup mirror marker") }
+    }) { "plugin logs must also reach the startup file" }
+    println("startup file isolation and rotation OK")
 }

@@ -115,7 +115,7 @@ The MCP server is per **project**. Extra windows may advance from `6800` (`6801`
 
 ### Logs
 
-Use **Help → Show Log in Explorer/Finder** to locate `idea.log`; search for `com.nexusmcp` or `MCP`.
+Click **Nexus status bar → 打开日志目录 (Open log directory)**, including when the proxy is disabled. Each IDE/plugin startup creates a new `nexus-rider_<startup>_pid<PID>_<part>_*.log`; a new part is created after 4 MiB and old files are preserved. Project windows share the current startup log. Files are in `NexusMCP/` under Rider's log directory. Logs also remain in `idea.log`, accessible through **Help → Show Log in Explorer/Finder**.
 
 Default INFO/WARN logs include client versions, session creation and initialization, invalid or evicted sessions, HTTP rejections, SSE connections, call start/completion/duration/failure, server stop reasons and connection recovery. Match sessions by their hashed `session` value and calls by `request` within one server run. `missing_session` / `unknown_session` distinguish absent headers from unknown IDs; `session_limit` / `waiting_for_initialize` identify eviction reasons. Tokens, complete session IDs, tool arguments and response bodies are omitted.
 
