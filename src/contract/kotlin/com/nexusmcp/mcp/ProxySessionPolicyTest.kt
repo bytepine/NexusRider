@@ -22,6 +22,7 @@ fun main() {
     Runtime.getRuntime().addShutdownHook(Thread { testRoot.deleteRecursively() })
     testDiagnostics()
     testStartupLogs(testRoot.resolve("startup-logs").toPath())
+    testHttpSessions()
     testLegacyV2Compatibility()
     fun query(port: Int, host: String = "", section: String = "All") = JSONObject()
         .put("Capability", "GetAssetBlueprint")

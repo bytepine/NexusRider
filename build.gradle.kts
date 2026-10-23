@@ -85,6 +85,7 @@ val contract = sourceSets.create("contract") {
     // 独立 JVM 也需要通常由 Rider 提供的 Kotlin 等编译期依赖。
     runtimeClasspath += compileClasspath + sourceSets.main.get().runtimeClasspath
 }
+kotlin.target.compilations.getByName("contract").associateWith(kotlin.target.compilations.getByName("main"))
 
 // 独立 JVM 契约检查，无需启动 Rider、UE 或引入测试框架。
 val testProxyPolicy = tasks.register<JavaExec>("testProxyPolicy") {

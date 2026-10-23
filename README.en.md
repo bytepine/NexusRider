@@ -117,7 +117,9 @@ The MCP server is per **project**. Extra windows may advance from `6800` (`6801`
 
 Click **Nexus status bar → 打开日志目录 (Open log directory)**, including when the proxy is disabled. Each IDE/plugin startup creates a new `nexus-rider_<startup>_pid<PID>_<part>_*.log`; a new part is created after 4 MiB and old files are preserved. Project windows share the current startup log. Files are in `NexusMCP/` under Rider's log directory. Logs also remain in `idea.log`, accessible through **Help → Show Log in Explorer/Finder**.
 
-Default INFO/WARN logs include client versions, session creation and initialization, invalid or evicted sessions, HTTP rejections, SSE connections, call start/completion/duration/failure, server stop reasons and connection recovery. Match sessions by their hashed `session` value and calls by `request` within one server run. `missing_session` / `unknown_session` distinguish absent headers from unknown IDs; `session_limit` / `waiting_for_initialize` identify eviction reasons. Tokens, complete session IDs, tool arguments and response bodies are omitted.
+Default INFO/WARN logs include client versions, session creation and initialization, invalid or evicted sessions, HTTP rejections, SSE connections, call start/completion/duration/failure, server stop reasons and connection recovery. Match sessions by their hashed `session` value and calls by `request` within one server run. `missing_session` / `unknown_session` distinguish absent headers from unknown IDs. Tokens, complete session IDs, tool arguments and response bodies are omitted.
+
+The server retains up to 50 MCP sessions. At capacity, it reclaims only sessions with no requests for 30 minutes and no in-flight calls or SSE connections (`idle_timeout`). New connections never evict sessions that are initializing or active; if no capacity can be freed, initialization returns 503 with `Retry-After` (`session_limit`). Clients can end a session with `DELETE /stream` and its session ID (`client_delete`). Reclaimed IDs require a new `initialize`.
 
 For disconnect reports, include the incident time, AI client name/version and client log alongside the relevant Rider log. Restarting the server invalidates sessions; clients must initialize again, which can be triggered by toggling the MCP connection. Routine scans and heartbeats do not produce INFO noise.
 
@@ -135,7 +137,7 @@ That is NexusLink persist behavior, not this proxy. See the [usage-guide FAQ](ht
 
 Output: `build/distributions/*.zip`. Debug: `./gradlew runIde` (local Rider 2025.3 + JDK 21).
 
-Run `./gradlew check buildPlugin` (`gradlew.bat check buildPlugin` on Windows) before submitting. The included `testProxyPolicy` task checks the PascalCase contract, local HTTP/WebSocket multi-instance routing and diagnostic redaction without launching Rider or UE. CI runs the same check before building.
+Run `./gradlew check buildPlugin` (`gradlew.bat check buildPlugin` on Windows) before submitting. The included `testProxyPolicy` task checks the PascalCase contract, local HTTP/WebSocket multi-instance routing, MCP session concurrency and capacity reclamation, and diagnostic redaction without launching Rider or UE. CI runs the same check before building.
 
 GitHub Release notes come only from `CHANGELOG.md` (`py scripts/extract_release_notes.py --version X.Y.Z --verify`). Tag: `nexus-rider-vX.Y.Z`. Record product changes in [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`.
 

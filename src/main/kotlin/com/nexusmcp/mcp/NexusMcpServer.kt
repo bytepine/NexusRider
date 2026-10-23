@@ -18,8 +18,6 @@ import io.netty.handler.timeout.ReadTimeoutHandler
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
 import java.util.UUID
-import java.util.Collections
-import java.util.LinkedHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -32,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong
  * 同时支持两种 MCP 传输协议：
  *   POST /stream   → Streamable HTTP，通过 Mcp-Session-Id 头隔离会话
  *   GET  /sse      → SSE 长连接，仅用于服务端推送通知
- *   OPTIONS /stream, OPTIONS /sse → CORS 预检
+ *   DELETE /stream → 客户端主动结束会话
  *
  * 不依赖 Rider 内置 MCP Server，可独立运行。
  */
@@ -51,18 +49,12 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
     /** 活跃的 SSE 客户端连接，用于推送 MCP 服务端通知。 */
     private val sseContexts = CopyOnWriteArrayList<ChannelHandlerContext>()
 
-    /**
-     * HTTP 通道的 per-session Dispatcher 表（按 Mcp-Session-Id 索引）。
-     * 用 LinkedHashMap 保持插入序，超上限时可淘汰最旧会话；用 synchronizedMap 保证线程安全。
-     */
-    val httpSessions: MutableMap<String, NexusMcpDispatcher> =
-        Collections.synchronizedMap(object : LinkedHashMap<String, NexusMcpDispatcher>() {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, NexusMcpDispatcher>?): Boolean = false
-        })
+    internal val httpSessions = McpHttpSessions()
 
     companion object {
-        /** 活跃会话上限：超出时淘汰最旧的非当前会话（防循环重连导致内存增长）。 */
+        /** 容量不足时仅回收空闲会话，保留正在使用的连接。 */
         internal const val MAX_SESSIONS = 50
+        internal val SESSION_IDLE_NANOS = TimeUnit.MINUTES.toNanos(30)
         internal const val MAX_SSE_CLIENTS = 32
     }
 
@@ -171,13 +163,48 @@ class NexusMcpServer(private val unrealManager: UnrealInstanceManager, private v
 
 private const val MCP_SESSION_HEADER = "Mcp-Session-Id"
 
+internal class McpHttpSession(val dispatcher: NexusMcpDispatcher, var lastUsed: Long, var active: Int = 1)
+
+// 单次持锁完成查找与占用，初始化、长调用和 SSE 都不会被并发创建误删。
+internal class McpHttpSessions(private val now: () -> Long = System::nanoTime) {
+    private val sessions = mutableMapOf<String, McpHttpSession>()
+    private val log = logger<McpHttpSessions>()
+    val size: Int get() = synchronized(this) { sessions.size }
+
+    @Synchronized fun create(id: String, dispatcher: NexusMcpDispatcher): McpHttpSession? {
+        val time = now()
+        if (sessions.size >= NexusMcpServer.MAX_SESSIONS) {
+            sessions.entries.removeIf {
+                val idle = it.value.active == 0 && time - it.value.lastUsed >= NexusMcpServer.SESSION_IDLE_NANOS
+                if (idle) log.info("MCP 会话移除 session=${McpDiagnostics.session(it.key)} reason=idle_timeout")
+                idle
+            }
+        }
+        if (sessions.size >= NexusMcpServer.MAX_SESSIONS) return null
+        return McpHttpSession(dispatcher, time).also { sessions[id] = it }
+    }
+
+    @Synchronized fun acquire(id: String): McpHttpSession? = sessions[id]?.also {
+        it.active++
+        it.lastUsed = now()
+    }
+
+    @Synchronized fun release(session: McpHttpSession) {
+        session.active--
+        session.lastUsed = now()
+    }
+
+    @Synchronized fun remove(id: String): Boolean = sessions.remove(id) != null
+    @Synchronized fun clear() = sessions.clear()
+}
+
 /**
  * Netty HTTP 请求处理器（per-session 会话隔离）。
  *   POST /stream  → Streamable HTTP，通过 Mcp-Session-Id 头隔离会话
  *   GET  /sse     → SSE 长连接，静默保持，用于服务端通知推送
  */
 private class McpHttpHandler(
-    private val sessions: MutableMap<String, NexusMcpDispatcher>,
+    private val sessions: McpHttpSessions,
     private val unrealManager: UnrealInstanceManager,
     private val executor: ExecutorService,
     private val sseContexts: CopyOnWriteArrayList<ChannelHandlerContext>,
@@ -209,6 +236,13 @@ private class McpHttpHandler(
             path == "/stream" && method == HttpMethod.POST    -> handlePost(ctx, request)
             path == "/sse"    && method == HttpMethod.GET     -> handleGet(ctx, request)
             path == "/stream" && method == HttpMethod.GET     -> handleGet(ctx, request)
+            path == "/stream" && method == HttpMethod.DELETE -> {
+                val id = request.headers().get(MCP_SESSION_HEADER).orEmpty()
+                if (sessions.remove(id)) {
+                    log.info("MCP 会话移除 session=${McpDiagnostics.session(id)} reason=client_delete")
+                    sendNoContent(ctx, HttpResponseStatus.NO_CONTENT)
+                } else sendResponse(ctx, HttpResponseStatus.NOT_FOUND, """{"error":"Invalid or missing Mcp-Session-Id"}""")
+            }
             else -> {
                 logRejection(ctx, request, 404, "unsupported_endpoint")
                 sendResponse(ctx, HttpResponseStatus.NOT_FOUND, """{"error":"Not Found"}""")
@@ -235,39 +269,26 @@ private class McpHttpHandler(
 
         // 在独立线程执行 dispatch，防止 WS 转发的同步等待阻塞 Netty IO 线程
         executor.submit {
+            var session: McpHttpSession? = null
             try {
                 val sessionId: String
-                val dispatcher: NexusMcpDispatcher
 
                 if (bIsInitialize) {
                     sessionId = UUID.randomUUID().toString()
-                    dispatcher = NexusMcpDispatcher(unrealManager, onSessionReady)
-                    // synchronizedMap 的集合视图迭代须手动持锁，否则 cachedThreadPool 并发 initialize 下
-                    // removeIf / keys 遍历可能抛 ConcurrentModificationException。
-                    synchronized(sessions) {
-                        sessions[sessionId] = dispatcher
-                        // 清理仍处于 WaitingForInitialize 的陈旧会话
-                        sessions.entries.removeIf {
-                            val remove = it.value.state == McpSessionState.WaitingForInitialize && it.key != sessionId
-                            if (remove) log.warn("MCP 会话移除 session=${McpDiagnostics.session(it.key)} reason=waiting_for_initialize")
-                            remove
-                        }
-                        // 超上限时按插入序淘汰最旧的非当前会话（防循环重连导致内存增长）
-                        if (sessions.size > NexusMcpServer.MAX_SESSIONS) {
-                            val oldest = sessions.keys.firstOrNull { it != sessionId }
-                            if (oldest != null) {
-                                log.warn("MCP 会话移除 session=${McpDiagnostics.session(oldest)} reason=session_limit limit=${NexusMcpServer.MAX_SESSIONS}")
-                                sessions.remove(oldest)
-                            }
-                        }
+                    session = sessions.create(sessionId, NexusMcpDispatcher(unrealManager, onSessionReady))
+                    if (session == null) {
+                        log.warn("MCP HTTP 请求拒绝 status=503 reason=session_limit remote=$remote $fields")
+                        sendResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, """{"error":"too many active MCP sessions"}""", retryAfter = true)
+                        return@submit
                     }
                     val params = msg?.optJSONObject("params")
                     val client = params?.optJSONObject("clientInfo")
                     log.info("MCP 新会话 session=${McpDiagnostics.session(sessionId)} previous=${McpDiagnostics.session(incomingSessionId)} client=${McpDiagnostics.text(client?.opt("name"))} version=${McpDiagnostics.text(client?.opt("version"))} protocol=${McpDiagnostics.text(params?.opt("protocolVersion"))} remote=$remote sessions=${sessions.size}")
-                } else if (incomingSessionId.isNotBlank() && sessions.containsKey(incomingSessionId)) {
-                    sessionId = incomingSessionId
-                    dispatcher = sessions[sessionId]!!
                 } else {
+                    sessionId = incomingSessionId
+                    session = sessions.acquire(sessionId)
+                }
+                if (session == null) {
                     val reason = if (incomingSessionId.isBlank()) "missing_session" else "unknown_session"
                     log.warn("MCP HTTP 请求拒绝 status=404 reason=$reason session=${McpDiagnostics.session(incomingSessionId)} remote=$remote $fields sessions=${sessions.size}；客户端需要重新 initialize")
                     sendResponse(ctx, HttpResponseStatus.NOT_FOUND, """{"error":"Invalid or missing Mcp-Session-Id"}""")
@@ -276,7 +297,7 @@ private class McpHttpHandler(
 
                 val callFields = "session=${McpDiagnostics.session(sessionId)} $fields"
                 if (msg?.optString("method") == "tools/call") log.info("MCP 请求开始 $callFields")
-                val responseJson = dispatcher.dispatch(body)
+                val responseJson = session.dispatcher.dispatch(body)
                 val timing = "elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}"
                 val failure = McpDiagnostics.failure(responseJson)
                 if (failure != null) log.warn("MCP 请求失败 $callFields $failure $timing")
@@ -291,6 +312,8 @@ private class McpHttpHandler(
             } catch (e: Exception) {
                 log.warn("MCP dispatch 异常 $fields type=${e.javaClass.simpleName} elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}")
                 sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, """{"error":"internal error"}""")
+            } finally {
+                session?.let { sessions.release(it) }
             }
         }
     }
@@ -308,6 +331,7 @@ private class McpHttpHandler(
             sendResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, """{"error":"too many SSE clients"}""")
             return
         }
+        val session = sessions.acquire(request.headers().get(MCP_SESSION_HEADER).orEmpty())
         ctx.pipeline().get(ReadTimeoutHandler::class.java)?.let { ctx.pipeline().remove(it) }
         val response = DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
         response.headers().apply {
@@ -331,6 +355,7 @@ private class McpHttpHandler(
         }, SSE_KEEPALIVE_MS, SSE_KEEPALIVE_MS, TimeUnit.MILLISECONDS)
 
         ctx.channel().closeFuture().addListener(ChannelFutureListener {
+            session?.let { sessions.release(it) }
             keepaliveFuture.cancel(false)
             sseContexts.remove(ctx)
             log.info("MCP SSE 已断开 $fields elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}")
@@ -347,6 +372,7 @@ private class McpHttpHandler(
         body: String,
         contentType: String = "application/json",
         sessionId: String? = null,
+        retryAfter: Boolean = false,
     ) {
         val buf = Unpooled.copiedBuffer(body, StandardCharsets.UTF_8)
         val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, buf)
@@ -355,6 +381,7 @@ private class McpHttpHandler(
             set(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes())
         }
         if (sessionId != null) response.headers().set(MCP_SESSION_HEADER, sessionId)
+        if (retryAfter) response.headers().set(HttpHeaderNames.RETRY_AFTER, "1")
         ctx.writeAndFlush(response).addListener { future ->
             if (!future.isSuccess) log.warn("MCP 响应发送失败 status=${status.code()} session=${McpDiagnostics.session(sessionId.orEmpty())} type=${future.cause()?.javaClass?.simpleName}")
         }

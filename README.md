@@ -117,7 +117,9 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 
 点击 **Nexus 状态栏 → 打开日志目录**，代理未启用时也可使用。目录中的 `nexus-rider_<启动时间>_pid<进程ID>_<分段>_*.log` 每次 IDE/插件启动新建，超过 4 MiB 后继续写新分段，旧文件保留；所有项目窗口共用本次启动的日志。目录位于 Rider 日志目录下的 `NexusMCP/`，原有 `idea.log` 同时保留，可通过 **Help → Show Log in Explorer/Finder** 查看。
 
-默认 INFO/WARN 即记录客户端版本、会话创建与握手、失效或淘汰、HTTP 拒绝、SSE 通断、调用开始/完成/耗时与失败，以及服务器停止原因和连接恢复。`session` 是会话摘要，`request` 是本次服务器运行内的请求编号；`missing_session` / `unknown_session` 区分缺少 ID 与 ID 已不存在，`session_limit` / `waiting_for_initialize` 标明清理原因。Token、完整会话 ID、工具参数和响应正文不写入日志。
+默认 INFO/WARN 即记录客户端版本、会话创建与握手、失效或淘汰、HTTP 拒绝、SSE 通断、调用开始/完成/耗时与失败，以及服务器停止原因和连接恢复。`session` 是会话摘要，`request` 是本次服务器运行内的请求编号；`missing_session` / `unknown_session` 区分缺少 ID 与 ID 已不存在。Token、完整会话 ID、工具参数和响应正文不写入日志。
+
+最多保留 50 个 MCP 会话；容量满时仅回收超过 30 分钟没有请求、也没有进行中调用或 SSE 连接的会话（`idle_timeout`）。正在初始化或使用的会话不会被新连接淘汰；无法回收时，新连接返回 503 和 `Retry-After`（`session_limit`）。客户端可通过携带会话 ID 的 `DELETE /stream` 主动结束会话（`client_delete`）。回收后的 ID 需要重新 `initialize`。
 
 反馈断连时请同时提供报错时间、AI 客户端名称与版本以及客户端日志。服务器重启会使原会话失效，客户端需要重新 `initialize`，可关闭再开启该 MCP 连接。常规扫描和心跳不会刷 INFO。
 
@@ -133,7 +135,7 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 ./gradlew buildPlugin    # Windows: gradlew.bat buildPlugin
 ```
 
-提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发、非法目标拒绝及日志字段脱敏；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
+提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发、非法目标拒绝、MCP 会话并发与容量回收及日志字段脱敏；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
 
 产物：`build/distributions/*.zip`。调试：`./gradlew runIde`（需本机 Rider 2025.3 + JDK 21）。
 
