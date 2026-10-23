@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 正式版自动将 GitHub Release 中的插件包提交到 JetBrains Marketplace；支持手动补传已有正式版，使用 `JETBRAINS_MARKETPLACE_TOKEN` Secret，预发布不上架商店。
+
 ## [2.2.0] - 2026-10-23
 
 ### Added

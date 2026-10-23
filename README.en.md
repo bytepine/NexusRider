@@ -141,6 +141,10 @@ Run `./gradlew check buildPlugin` (`gradlew.bat check buildPlugin` on Windows) b
 
 GitHub Release notes come only from `CHANGELOG.md` (`py scripts/extract_release_notes.py --version X.Y.Z --verify`). Tag: `nexus-rider-vX.Y.Z`. Record product changes in [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`.
 
+Configure the `JETBRAINS_MARKETPLACE_TOKEN` repository secret under **Settings → Secrets and variables → Actions**, using a [Marketplace token](https://plugins.jetbrains.com/author/me/tokens) with permission to publish this plugin. Stable releases automatically submit the same ZIP from GitHub Release to JetBrains Marketplace; prereleases skip the store. The first plugin listing must be created manually, and uploaded updates remain subject to review.
+
+To submit an existing stable release, open **Actions → Publish to JetBrains Marketplace → Run workflow** and enter its version (for example, `2.2.0`). This workflow accepts only existing stable GitHub Releases and uploads the published ZIP. The same version cannot be uploaded twice.
+
 Source: `src/main/kotlin/com/nexusmcp/mcp/`
 
 ---

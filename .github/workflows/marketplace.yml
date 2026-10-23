@@ -1,0 +1,69 @@
+name: Publish to JetBrains Marketplace
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing GitHub Release version, e.g. 2.2.0"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      JETBRAINS_MARKETPLACE_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jetbrains-marketplace-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      # 复用已发布产物，手动补传和后续自动发版走同一条上传路径。
+      - name: Download stable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Only stable X.Y.Z versions can be published to Marketplace"
+            exit 1
+          fi
+          TAG="nexus-rider-v$VERSION"
+          gh release view "$TAG" --json isDraft,isPrerelease |
+            jq -e '.isDraft == false and .isPrerelease == false'
+          gh release download "$TAG" \
+            --pattern "nexus-mcp-rider-$VERSION.zip" --dir release
+
+      - name: Upload to JetBrains Marketplace
+        env:
+          JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$JETBRAINS_MARKETPLACE_TOKEN" ]]; then
+            echo "::error::Configure the JETBRAINS_MARKETPLACE_TOKEN repository secret"
+            exit 1
+          fi
+          if ! curl --silent --show-error --fail-with-body \
+            --connect-timeout 30 --max-time 300 \
+            --header "Authorization: Bearer $JETBRAINS_MARKETPLACE_TOKEN" \
+            --form-string "xmlId=com.byteyang.nexusmcp" \
+            --form "file=@release/nexus-mcp-rider-$VERSION.zip" \
+            --output marketplace-response.json \
+            https://plugins.jetbrains.com/api/updates/upload; then
+            cat marketplace-response.json 2>/dev/null || true
+            exit 1
+          fi
+          cat marketplace-response.json

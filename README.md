@@ -141,6 +141,10 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 
 GitHub Release 正文仅来自 `CHANGELOG.md` 对应段落（`py scripts/extract_release_notes.py --version X.Y.Z --verify`）。tag：`nexus-rider-vX.Y.Z`。功能变更写入 [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`。
 
+在仓库 **Settings → Secrets and variables → Actions** 配置 `JETBRAINS_MARKETPLACE_TOKEN`（具有插件发布权限的 [Marketplace Token](https://plugins.jetbrains.com/author/me/tokens)）。正式版创建 GitHub Release 后，会自动将同一 ZIP 提交到 JetBrains Marketplace；预发布跳过商店。首次上架需先在 Marketplace 手动创建插件，上传后的版本仍需审核。
+
+补传已有正式版：**Actions → Publish to JetBrains Marketplace → Run workflow**，输入版本号（例如 `2.2.0`）。该入口只接受已有 GitHub Release 的正式版，复用已发布 ZIP；同一版本不能重复上传。
+
 源码：`src/main/kotlin/com/nexusmcp/mcp/`
 
 ---
