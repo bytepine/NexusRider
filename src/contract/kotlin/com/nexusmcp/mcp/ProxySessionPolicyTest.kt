@@ -99,6 +99,7 @@ fun main() {
     check(otherHub.store(b, largeFailure, 1000).toString() == largeFailure.toString()) { "large errors must not be replaced with successful file summaries" }
     check(otherHub.lookupFresh(b, 1100) == null)
     testDispatcherRouting()
+    testToolListReconnect()
     println("proxy policy contract OK")
 }
 
@@ -136,7 +137,7 @@ private fun testLegacyV2Compatibility() {
 }
 
 /** 本地 HTTP/WS 协议替身，验证真实 Manager 与 Dispatcher，不启动 UE。 */
-private class RoutingInstance(name: String) : AutoCloseable {
+private class RoutingInstance(name: String, private val toolNames: List<String> = emptyList()) : AutoCloseable {
     val calls = AtomicInteger()
     private val ready = CountDownLatch(1)
     private val ws = object : WebSocketServer(InetSocketAddress("127.0.0.1", 0)) {
@@ -147,7 +148,15 @@ private class RoutingInstance(name: String) : AutoCloseable {
         override fun onMessage(conn: WebSocket, text: String) {
             val request = JSONObject(text)
             val result = JSONObject()
+            if (request.optString("method") == "tools/list" && toolNames.isNotEmpty()) {
+                result.put("tools", JSONArray(toolNames.map { JSONObject().put("name", it).put("inputSchema", JSONObject().put("type", "object")) }))
+            }
             if (request.optString("method") == "tools/call") {
+                if (toolNames.isNotEmpty() && request.getJSONObject("params").optString("name") !in toolNames) {
+                    conn.send(JSONObject().put("jsonrpc", "2.0").put("id", request.opt("id"))
+                        .put("error", JSONObject().put("code", -32601).put("message", "Tool not found")).toString())
+                    return
+                }
                 calls.incrementAndGet()
                 result.put("content", JSONArray().put(JSONObject().put("type", "text")
                     .put("text", JSONObject().put("source", name).toString())))
@@ -209,6 +218,39 @@ private fun testDispatcherRouting() {
             check(call("GetAssetBlueprint") == "B" && b.calls.get() == 3) { "write B did not invalidate B" }
             manager.disconnect()
             check(manager.cacheScope == LanHost.instanceKey("", b.port))
+        } finally { manager.disconnect() }
+    } }
+}
+
+private fun testToolListReconnect() {
+    val legacyNames = listOf("search_capabilities", "call_capability", "submit_feedback")
+    val modernNames = listOf("SearchCapabilities", "CallCapability", "SubmitFeedback")
+    RoutingInstance("legacy", legacyNames).use { legacy -> RoutingInstance("modern", modernNames).use { modern ->
+        val manager = UnrealInstanceManager()
+        manager.scanPortStart = modern.port
+        manager.scanPortEnd = modern.port
+        try {
+            check(manager.connectTo(legacy.port, true))
+            val dispatcher = NexusMcpDispatcher(manager)
+            dispatcher.dispatch(JSONObject().put("jsonrpc", "2.0").put("id", 1).put("method", "initialize").toString())
+            dispatcher.dispatch(JSONObject().put("jsonrpc", "2.0").put("method", "notifications/initialized").toString())
+            fun list(): List<String> {
+                val response = JSONObject(dispatcher.dispatch("""{"jsonrpc":"2.0","id":2,"method":"tools/list"}"""))
+                val tools = response.getJSONObject("result").getJSONArray("tools")
+                return (0 until tools.length()).map { tools.getJSONObject(it).getString("name") }
+            }
+            check(list().containsAll(legacyNames))
+            check(manager.connectTo(modern.port, true))
+            val updated = list()
+            check(updated.containsAll(modernNames) && legacyNames.none { it in updated }) { "stale tool names after reconnect: $updated" }
+            for (name in modernNames) {
+                val params = JSONObject().put("name", name).put("arguments", JSONObject().put("Query", "")
+                    .put("Capability", "GetEditorInfo").put("Arguments", JSONObject()))
+                val request = JSONObject().put("jsonrpc", "2.0").put("id", 3).put("method", "tools/call").put("params", params)
+                val response = JSONObject(dispatcher.dispatch(request.toString()))
+                check(!response.has("error")) { response.toString() }
+            }
+            check(modern.calls.get() == 3) { "new tools must actually reach the new UE" }
         } finally { manager.disconnect() }
     } }
 }

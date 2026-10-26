@@ -135,7 +135,7 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 ./gradlew buildPlugin    # Windows: gradlew.bat buildPlugin
 ```
 
-提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发、非法目标拒绝、MCP 会话并发与容量回收及日志字段脱敏；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
+提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发、旧/新工具清单重连刷新及实际调用、非法目标拒绝、MCP 会话并发与容量回收及日志字段脱敏；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
 
 产物：`build/distributions/*.zip`。调试：`./gradlew runIde`（需本机 Rider 2025.3 + JDK 21）。
 
