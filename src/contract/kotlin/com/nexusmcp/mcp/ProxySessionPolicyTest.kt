@@ -148,6 +148,7 @@ private class RoutingInstance(name: String, private val toolNames: List<String> 
         override fun onMessage(conn: WebSocket, text: String) {
             val request = JSONObject(text)
             val result = JSONObject()
+            if (request.optString("method") == "auth") result.put("ok", request.getJSONObject("params").optString("token") == "contract-test-token")
             if (request.optString("method") == "tools/list" && toolNames.isNotEmpty()) {
                 result.put("tools", JSONArray(toolNames.map { JSONObject().put("name", it).put("inputSchema", JSONObject().put("type", "object")) }))
             }
@@ -158,8 +159,12 @@ private class RoutingInstance(name: String, private val toolNames: List<String> 
                     return
                 }
                 calls.incrementAndGet()
+                val args = request.getJSONObject("params").optJSONObject("arguments")
+                if (args?.optBoolean("ContractTimeout") == true) return
                 result.put("content", JSONArray().put(JSONObject().put("type", "text")
                     .put("text", JSONObject().put("source", name).toString())))
+                if (args?.optBoolean("ContractFailure") == true) result.put("isError", true).put("structuredContent",
+                    JSONObject().put("ErrorKind", "ArgInvalid").put("bRolledBack", false).put("Error", "contract failure"))
             }
             conn.send(JSONObject().put("jsonrpc", "2.0").put("id", request.opt("id")).put("result", result).toString())
         }
@@ -251,6 +256,19 @@ private fun testToolListReconnect() {
                 check(!response.has("error")) { response.toString() }
             }
             check(modern.calls.get() == 3) { "new tools must actually reach the new UE" }
+            // 通过真实串行请求路径，以短超时验证写请求不重试。
+            val send = UnrealInstanceManager::class.java.getDeclaredMethod("sendWsRequest", String::class.java, JSONObject::class.java, Long::class.javaPrimitiveType)
+            send.isAccessible = true
+            val auth = send.invoke(manager, "auth", JSONObject().put("token", "contract-test-token"), 1000L) as WsRequestOutcome
+            check(auth.response?.getJSONObject("result")?.getBoolean("ok") == true)
+            val failRequest = JSONObject().put("jsonrpc", "2.0").put("id", 4).put("method", "tools/call")
+                .put("params", JSONObject().put("name", "CallCapability").put("arguments", JSONObject()
+                    .put("Capability", "ManageAssetDataTable").put("Arguments", JSONObject()).put("ContractFailure", true)))
+            val failed = JSONObject(dispatcher.dispatch(failRequest.toString())).getJSONObject("result")
+            check(failed.getBoolean("isError") && failed.getJSONObject("structuredContent").getString("ErrorKind") == "ArgInvalid")
+            val timeout = send.invoke(manager, "tools/call", JSONObject().put("name", "CallCapability").put("arguments",
+                JSONObject().put("Capability", "ManageAssetDataTable").put("ContractTimeout", true)), 50L) as WsRequestOutcome
+            check(timeout.status == WsRequestStatus.TIMEOUT && modern.calls.get() == 5) { "failed/timed-out writes must be sent once" }
         } finally { manager.disconnect() }
     } }
 }
