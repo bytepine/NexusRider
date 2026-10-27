@@ -7,15 +7,17 @@
 
 ## [Unreleased]
 
-### Changed
-
-- 客户端配置与 Desktop 对齐为六组八种客户端，包含 Codex TOML 与自动选择 Streamable HTTP；复制内容去除说明注释和冗余字段，按客户端提示粘贴位置。Rider 配置预览改为独立窗口，复制和关闭固定在底部，低频发现配置折叠、本机 Token 默认隐藏。
+## [2.3.0] - 2026-10-27
 
 ### Added
 
-- 代理回归覆盖旧/新工具清单重连刷新、认证字段、结构化错误透传及超时写请求不重试，并验证新工具实际转发到新的 UE 连接。
+- 客户端配置支持 Cursor / Windsurf、Codex、Claude Code / VS Code、CodeBuddy、Cline、Roo Code，相同格式合并显示；Codex 自动生成 Streamable HTTP 的 TOML 配置。
+- 正式版插件包自动提交到 JetBrains Marketplace。
 
-- 正式版自动将 GitHub Release 中的插件包提交到 JetBrains Marketplace；支持手动补传已有正式版，使用 `JETBRAINS_MARKETPLACE_TOKEN` Secret，预发布不上架商店。
+### Changed
+
+- 客户端配置使用独立窗口，复制和关闭按钮固定在底部，粘贴位置和复制结果单独显示。
+- 低频 UE 发现选项折叠，本机 Token 默认隐藏，复制内容仅包含客户端配置。
 
 ## [2.2.0] - 2026-10-23
 
