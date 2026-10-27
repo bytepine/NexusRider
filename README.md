@@ -1,8 +1,12 @@
-# nexus-rider — Rider 插件
+# Nexus MCP for Unreal Engine — JetBrains Rider
 
 **语言 / Language**: **简体中文** · [English](README.en.md)
 
-JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`），发现 UE 实例，经 WebSocket 把 AI 工具调用转发给 **NexusLink**。蓝图、资产、PIE 等能力由 UE 里提供，本插件不实现游戏逻辑。
+**在 JetBrains Rider 中连接 AI 与 Unreal Engine。** NexusRider 是 [NexusLink — Unreal Engine MCP](https://github.com/bytepine/NexusLink) 的 IDE 客户端，在插件商店名为 **Nexus MCP**。配合 UE 侧 NexusLink，可让 AI 读取项目、编辑资产和调试运行状态。
+
+[安装与使用](#安装与使用) · [下载 Rider 插件](https://github.com/bytepine/NexusRider/releases) · [UE 插件（Fab：NexusMCP）](https://www.fab.com/listings/60097027-d7a5-4f73-87f3-81edb1b6ef0b) · [NexusLink 文档](https://github.com/bytepine/NexusLink/blob/master/docs/README.md)
+
+插件负责自动发现 UE 实例、复制 AI 客户端配置和多实例切换；蓝图、资产、PIE 等能力由 NexusLink 提供。本地 MCP HTTP 端口默认 `:6800`，经 WebSocket 转发工具调用。
 
 四端端口与开关层数见 [NexusLink 使用指南](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。本插件是三层开关中的 IDE 层。本机不要与 NexusDesktop / VSCode 代理同时开。
 

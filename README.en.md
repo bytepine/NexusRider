@@ -1,8 +1,12 @@
 **Language / Language**: [简体中文](README.md) · **English**
 
-# nexus-rider — Rider Plugin
+# Nexus MCP for Unreal Engine — JetBrains Rider
 
-JetBrains Rider MCP **proxy**: local HTTP server (default `:6800`), discovers UE instances, and forwards AI tool calls to **NexusLink** over WebSocket. Blueprints, assets, PIE, and other capabilities come from the UE plugin; this plugin does not implement game logic.
+**Connect AI clients to Unreal Engine from JetBrains Rider.** NexusRider is the IDE integration for [NexusLink — Unreal Engine MCP](https://github.com/bytepine/NexusLink), listed as **Nexus MCP** in the plugin marketplace. With NexusLink installed in UE, AI clients can read project context, edit assets, and debug running sessions.
+
+[Install & use](#install--use) · [Download Rider plugin](https://github.com/bytepine/NexusRider/releases) · [UE plugin on Fab (NexusMCP)](https://www.fab.com/listings/60097027-d7a5-4f73-87f3-81edb1b6ef0b) · [NexusLink documentation](https://github.com/bytepine/NexusLink/blob/master/docs/README.md)
+
+The plugin discovers UE instances, generates AI client configuration, and switches between projects. Blueprints, assets, PIE, and other engine capabilities come from NexusLink. The local MCP HTTP server defaults to `:6800` and forwards tool calls over WebSocket.
 
 Ports and switch layers: [NexusLink usage guide](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md). This plugin is the IDE layer of the three-layer switch. Do not run NexusDesktop or the VSCode proxy on the same machine at the same time.
 

@@ -1,32 +1,33 @@
 <idea-plugin>
     <id>com.byteyang.nexusmcp</id>
-    <name>Nexus MCP</name>
+    <name>Nexus MCP for Unreal Engine</name>
     <version>0.0.0</version>
     <vendor>byteyang</vendor>
 
     <description><![CDATA[
-        <p><b>Nexus MCP</b> turns JetBrains Rider into an MCP proxy for <b>Unreal Engine</b>.
-        It runs a local MCP server (default port <code>6800</code>), auto-discovers running UE
-        editor/PIE instances, and forwards AI tool calls to them over WebSocket. Your AI client
-        (Cursor, CodeBuddy, Windsurf, ...) connects to one stable endpoint while Rider handles
-        instance discovery, long-lived connections, and switching between multiple UE instances.</p>
+        <p><b>Connect AI clients to Unreal Engine from JetBrains Rider.</b>
+        Nexus MCP is the Rider integration for <a href="https://github.com/bytepine/NexusLink">NexusLink — Unreal Engine MCP</a>.
+        With NexusLink installed in UE, use the Model Context Protocol (MCP) to inspect project context,
+        work with Blueprints and materials, and debug running sessions.</p>
 
-        <p>Blueprints, assets, PIE control, materials and other engine capabilities are provided
-        by the UE-side <b>NexusLink</b> plugin — this plugin is a proxy and does not implement
-        game logic itself.</p>
+        <p>Discover running UE projects, generate AI client configuration, and switch instances
+        from Rider's status bar. This plugin provides the local MCP relay (default port
+        <code>6800</code>); Blueprints, assets, PIE control, and other engine capabilities come from NexusLink.</p>
 
         <p><b>Requires the UE plugin:</b>
+        <a href="https://www.fab.com/listings/60097027-d7a5-4f73-87f3-81edb1b6ef0b">Fab (listed as NexusMCP)</a> ·
         <a href="https://github.com/bytepine/NexusLink">NexusLink (GitHub)</a> ·
         <a href="https://github.com/bytepine/NexusLink/releases">Download (Releases)</a>.
-        Install <code>nexus-mcp-unreal-*.zip</code> into your project's
-        <code>Plugins/NexusLink</code>, enable it, then turn on
+        Install NexusLink from Fab for your engine version, or extract a release ZIP so that
+        <code>Plugins/NexusLink/NexusLink.uplugin</code> exists in your project. Enable it, then turn on
         <i>Editor Preferences &gt; Plugins &gt; NexusLink &gt; Enable MCP Server</i>.</p>
 
         <p><b>Getting started:</b></p>
         <ul>
           <li>Open a project in Rider (the MCP server starts per project, not on the welcome screen)</li>
           <li>Enable it under <i>Settings &gt; Tools &gt; Nexus MCP</i> (disabled by default)</li>
-          <li>Point your AI client at <code>http://127.0.0.1:6800/stream</code></li>
+          <li>Choose <i>MCP client configuration…</i> in settings, select your AI client and protocol,
+          and paste the generated configuration, including authentication, into your AI client</li>
         </ul>
 
         <p><b>Features:</b></p>
@@ -43,26 +44,27 @@
 
         <hr/>
 
-        <p><b>Nexus MCP</b> 让 JetBrains Rider 充当 <b>Unreal Engine</b> 的 MCP 代理：本地运行
-        MCP 服务器（默认端口 <code>6800</code>），自动发现正在运行的 UE 编辑器/PIE 实例，并经
-        WebSocket 把 AI 工具调用转发给它们。AI 客户端（Cursor、CodeBuddy、Windsurf 等）只需连接
-        一个固定端点，由 Rider 负责实例发现、长连接维持以及在多个 UE 实例间切换。</p>
+        <p><b>在 JetBrains Rider 中连接 AI 与 Unreal Engine。</b>
+        Nexus MCP 是 <a href="https://github.com/bytepine/NexusLink">NexusLink — Unreal Engine MCP</a>
+        的 Rider 客户端。配合 UE 侧 NexusLink，通过 Model Context Protocol（MCP）让 AI
+        读取项目上下文、处理蓝图与材质，并调试运行状态。</p>
 
-        <p>蓝图、资产、PIE 控制、材质等引擎能力由 UE 里的 <b>NexusLink</b> 插件提供——本插件仅做
-        代理，不实现游戏逻辑。</p>
+        <p>在 Rider 中自动发现 UE 项目、生成 AI 客户端配置，并从状态栏切换实例。
+        本插件提供本地 MCP 中转（默认端口 <code>6800</code>）；蓝图、资产、PIE 等引擎能力由 NexusLink 提供。</p>
 
         <p><b>需配合 UE 插件：</b>
+        <a href="https://www.fab.com/listings/60097027-d7a5-4f73-87f3-81edb1b6ef0b">Fab（商品名 NexusMCP）</a> ·
         <a href="https://github.com/bytepine/NexusLink">NexusLink（GitHub）</a> ·
         <a href="https://github.com/bytepine/NexusLink/releases">下载（Releases）</a>。
-        将 <code>nexus-mcp-unreal-*.zip</code> 解压到项目的
-        <code>Plugins/NexusLink</code>，启用后在
+        从 Fab 安装适配引擎版本的 NexusLink；或解压 Release ZIP，确认项目中存在
+        <code>Plugins/NexusLink/NexusLink.uplugin</code>。启用后在
         <i>Editor Preferences &gt; Plugins &gt; NexusLink &gt; Enable MCP Server</i> 勾选开启。</p>
 
         <p><b>快速开始：</b></p>
         <ul>
           <li>在 Rider 中打开一个项目（MCP 服务器按项目启动，欢迎界面不启动）</li>
           <li>在 <i>Settings &gt; Tools &gt; Nexus MCP</i> 勾选启用（默认关闭）</li>
-          <li>将 AI 客户端指向 <code>http://127.0.0.1:6800/stream</code></li>
+          <li>在设置中选择「MCP 客户端配置…」，选好 AI 客户端与协议，将包含身份验证的生成配置粘贴到 AI 客户端</li>
         </ul>
 
         <p><b>功能：</b></p>

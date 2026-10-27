@@ -46,7 +46,7 @@ kotlin {
 intellijPlatform {
     pluginConfiguration {
         id = "com.byteyang.nexusmcp"
-        name = "Nexus MCP"
+        name = "Nexus MCP for Unreal Engine"
         version = providers.gradleProperty("pluginVersion")
 
         ideaVersion {
