@@ -55,7 +55,7 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 
 Cross-machine and auth: [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md).
 
-The panel lets you pick a transport (Streamable HTTP / SSE) and a client (Cursor / CodeBuddy) so each generate/copy is a single snippet; if LAN is on and multiple NICs exist, pick an IP first. Copied Bearer is this machine's token only.
+Open the separate MCP client configuration window from Settings. Apply settings first: previews use saved settings and the actual listening port. Copy and Close stay at the bottom. If LAN is on and multiple NICs exist, pick an IP first. Copied Bearer is this machine's token only.
 
 ### 4. Status bar
 
@@ -78,6 +78,8 @@ Click to switch instances. A single instance auto-connects; multiple instances p
 
 Default `http://127.0.0.1:6800/stream`. On collision the port advances; use the startup notice or settings panel. Bound to `127.0.0.1`.
 
+Client presets match Desktop: **Cursor / Windsurf**, **Codex**, **Claude Code / VS Code**, **CodeBuddy**, **Cline**, and **Roo Code**. Identical formats share an option; placement instructions stay outside the copied configuration. Codex generates TOML for `~/.codex/config.toml` (or custom `CODEX_HOME`) and uses Streamable HTTP automatically; other clients generate JSON members. Claude Code uses `mcpServers` in `.mcp.json`; VS Code uses `servers` in `.vscode/mcp.json`. Replace an existing entry with the same name and preserve other settings.
+
 **Cursor** (`~/.cursor/mcp.json`). Copy the token from the settings panel **Copy** next to the machine token. Multiple tokens: `Bearer <tok1>, <tok2>`. If **Require MCP auth** is off, omit `headers`. See [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-身份验证).
 
 ```json
@@ -93,7 +95,7 @@ Default `http://127.0.0.1:6800/stream`. On collision the port advances; use the 
 }
 ```
 
-Legacy MCP clients can use `http://127.0.0.1:6800/sse`. For CodeBuddy / Windsurf, pick that client in the settings panel, then copy.
+Legacy MCP clients can use `http://127.0.0.1:6800/sse`. Select the matching client in the configuration window, then copy.
 
 When connected, `tools/list` merges UE tools. For concurrent multi-instance calls, pass `targetPort` in `arguments` (one-shot WS; does not change the long-lived binding).
 

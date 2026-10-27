@@ -12,9 +12,7 @@ import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.ToolbarDecorator
 import com.intellij.ui.components.JBList
-import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.bindIntText
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
@@ -22,7 +20,11 @@ import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
+import java.awt.BorderLayout
 import java.awt.Font
+import javax.swing.JPanel
+import javax.swing.JLabel
+import javax.swing.JPasswordField
 import java.awt.datatransfer.StringSelection
 import javax.swing.DefaultListModel
 import javax.swing.JComponent
@@ -38,36 +40,11 @@ class NexusLinkConfigurable : Configurable {
 
     private var dialogPanel: DialogPanel? = null
 
-    /** MCP 端口输入框引用，生成配置时读取实时值，避免使用面板创建时的快照。 */
-    private var mcpPortCell: Cell<JBTextField>? = null
-
     private val extraTokenModel = DefaultListModel<String>()
     private val extraTokenList = JBList(extraTokenModel).apply {
         selectionMode = ListSelectionModel.SINGLE_SELECTION
         emptyText.text = "点击 + 添加其他机器的 token"
         visibleRowCount = 3
-    }
-
-    /** 配置预览区域，点击按钮后填入对应格式配置，供用户复制。 */
-    private val configPreview = JTextArea(8, 60).apply {
-        isEditable = false
-        lineWrap = false
-        font = Font("Monospaced", Font.PLAIN, 12)
-        text = PLACEHOLDER
-    }
-
-    /** 当前选中的传输协议与客户端；点任一轴按钮后按组合生成一份片段。 */
-    private var protocol = PROTO_STREAM
-    private var clientKind = CLIENT_CURSOR
-    private var lastCopyHost: String? = null
-
-    companion object {
-        /** 面板未生成配置时的占位提示文本，复制按钮需跳过此内容。 */
-        private const val PLACEHOLDER = "← 选择协议与客户端后生成对应配置"
-        private const val PROTO_STREAM = "stream"
-        private const val PROTO_SSE = "sse"
-        private const val CLIENT_CURSOR = "cursor"
-        private const val CLIENT_CODEBUDDY = "codebuddy"
     }
 
     override fun getDisplayName() = "Nexus MCP"
@@ -183,12 +160,8 @@ class NexusLinkConfigurable : Configurable {
 
     override fun disposeUIResources() {
         dialogPanel = null
-        mcpPortCell = null
         extraTokenModel.clear()
-        lastCopyHost = null
-        protocol = PROTO_STREAM
-        clientKind = CLIENT_CURSOR
-        configPreview.text = PLACEHOLDER
+
     }
 
     private fun extraTokensFromState(): List<String> =
@@ -235,16 +208,23 @@ class NexusLinkConfigurable : Configurable {
             // ── 服务器端口 ──────────────────────────────────────────
             group("服务器端口") {
                 row("MCP 端口:") {
-                    mcpPortCell = intTextField(1024..65535)
+                    intTextField(1024..65535)
                         .bindIntText(state::mcpPort)
                     comment("AI 客户端连接此端口。修改后保存即生效。")
                 }
             }
 
-            // ── UE 实例发现 ─────────────────────────────────────────
-            group("UE 实例发现") {
+            group("接入 AI 客户端") {
                 row {
-                    comment("并发端口扫描：对范围内端口发 GET /status，探测已启用 NexusLink MCP 的 UE 实例。")
+                    button("MCP 客户端配置…") { showClientConfig() }
+                    comment("使用已保存的设置生成 JSON / TOML；修改设置后请先应用。")
+                }
+            }
+
+            // ── UE 实例发现 ─────────────────────────────────────────
+            collapsibleGroup("UE 实例发现（高级）") {
+                row {
+                    comment("自动发现本机已启用 NexusLink MCP 的 UE 实例。")
                 }
                 row("扫描端口范围:") {
                     intTextField(1024..65535)
@@ -282,10 +262,10 @@ class NexusLinkConfigurable : Configurable {
                 row {
                     checkBox("启用 MCP 身份验证")
                         .bindSelected(state::requireAuth)
-                        .comment("默认开。关闭后 AI 连本插件无需 Bearer（同旧版）；连 UE 仍按对方 /status.authRequired。")
+                        .comment("默认开启。关闭后，AI 客户端连接本代理不再需要身份验证。")
                 }
                 row("本机 Token:") {
-                    cell(JBTextField(state.proxyToken).apply { isEditable = false })
+                    cell(JPasswordField(state.proxyToken).apply { isEditable = false })
                         .align(AlignX.FILL)
                     button("复制") {
                         val token = NexusMcpAuth.loadOrCreateMachineToken(
@@ -309,116 +289,70 @@ class NexusLinkConfigurable : Configurable {
                 }
             }
 
-            // ── 接入 AI 客户端 ──────────────────────────────────────
-            group("接入 AI 客户端") {
-                row {
-                    comment(
-                        "端点地址由上方「MCP 端口」决定（stream / sse）。<br>" +
-                        "选择传输协议与客户端后生成一份配置；复制只写入当前预览。"
-                    )
-                }
-                row {
-                    button("Streamable HTTP") {
-                        protocol = PROTO_STREAM
-                        generatePreview()
-                    }
-                    button("SSE") {
-                        protocol = PROTO_SSE
-                        generatePreview()
-                    }
-                }
-                row {
-                    button("Cursor") {
-                        clientKind = CLIENT_CURSOR
-                        generatePreview()
-                    }
-                    button("CodeBuddy") {
-                        clientKind = CLIENT_CODEBUDDY
-                        generatePreview()
-                    }.align(AlignX.LEFT)
-                    // 一键复制当前预览内容（与 VSCode copyMcpConfig 对齐；占位文本时静默 no-op）
-                    button("复制") {
-                        val text = configPreview.text
-                        if (text.isNotBlank() && text != PLACEHOLDER) {
-                            CopyPasteManager.getInstance().setContents(StringSelection(text))
-                        }
-                    }.align(AlignX.RIGHT)
-                }
-                row {
-                    cell(JScrollPane(configPreview)).align(AlignX.FILL)
-                }
-            }
+
         }
     }
 
-    /** 按当前协议 × 客户端生成一份预览；网卡 IP 在本面板会话内只选一次。 */
-    private fun generatePreview() {
+    /** 独立配置窗使用 IDE 原生底部操作区，长内容只在预览区滚动。 */
+    private fun showClientConfig() {
         val state = NexusLinkSettings.instance.state
-        val runningPort = ProjectManager.getInstance().openProjects
+        val port = ProjectManager.getInstance().openProjects
             .mapNotNull { it.getUserData(NexusLinkStartupActivity.MCP_SERVER_KEY) }
-            .firstOrNull { it.isRunning }
-            ?.port
-        val port = runningPort ?: (mcpPortCell?.component?.text?.toIntOrNull() ?: state.mcpPort)
-        val host = lastCopyHost ?: pickCopyHost(state.listenLan) ?: return
-        lastCopyHost = host
-        configPreview.text = buildMcpConfig(protocol, clientKind, port, host)
-        configPreview.caretPosition = 0
-    }
-
-    /** 生成单份 MCP 客户端配置片段（协议 × 客户端）。 */
-    private fun buildMcpConfig(
-        proto: String,
-        client: String,
-        port: Int,
-        host: String = LanHost.LOOPBACK,
-    ): String {
-        val headers = mcpAuthHeaders()
-        val path = if (proto == PROTO_SSE) "sse" else "stream"
-        return if (client == CLIENT_CODEBUDDY) {
-            if (proto == PROTO_STREAM) {
-                """
-# ── CodeBuddy / Windsurf ──────────────────────────────────
-# 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
-"Nexus": {
-  "url": "http://$host:$port/$path",
-  "transportType": "streamable-http",
-  "description": "NexusLink MCP Server for Unreal Engine",
-  "disabled": false$headers
-}
-                """.trimIndent()
-            } else {
-                """
-# ── CodeBuddy / Windsurf ──────────────────────────────────
-# 配置路径：自定义 MCP → 粘贴到 mcpServers 节点下
-"Nexus": {
-  "url": "http://$host:$port/$path",
-  "disabled": false$headers
-}
-                """.trimIndent()
-            }
-        } else {
-            """
-# ── Cursor ────────────────────────────────────────────────
-# 配置路径：~/.cursor/mcp.json → mcpServers 节点下
-"nexus-unreal": {
-  "url": "http://$host:$port/$path"$headers
-}
-            """.trimIndent()
+            .firstOrNull { it.isRunning }?.port ?: state.mcpPort
+        val host = pickCopyHost(state.listenLan) ?: return
+        val client = ComboBox(McpClient.entries.toTypedArray())
+        val protocol = ComboBox(arrayOf("Streamable HTTP", "SSE"))
+        val instructions = JTextArea(3, 50).apply {
+            isEditable = false
+            isOpaque = false
+            lineWrap = true
+            wrapStyleWord = true
+            font = JLabel().font
         }
+        val preview = JTextArea(8, 50).apply {
+            isEditable = false
+            font = Font("Monospaced", Font.PLAIN, 12)
+        }
+        val status = JLabel(" ")
+        fun refresh() {
+            val selected = client.selectedItem as McpClient
+            protocol.isEnabled = selected != McpClient.CODEX
+            if (selected == McpClient.CODEX && protocol.selectedIndex != 0) protocol.selectedIndex = 0
+            instructions.text = selected.instructions
+            preview.text = buildMcpClientConfig(if (protocol.selectedIndex == 1) "sse" else "stream",
+                selected, port, state.proxyToken, host, state.requireAuth)
+            preview.caretPosition = 0
+            status.text = " "
+        }
+        client.addActionListener { refresh() }
+        protocol.addActionListener { refresh() }
+        refresh()
+        object : DialogWrapper(true) {
+            init {
+                title = "MCP 客户端配置"
+                init()
+                setOKButtonText("复制配置")
+                setCancelButtonText("关闭")
+            }
+            override fun createCenterPanel(): JComponent = JPanel(BorderLayout(JBUI.scale(8), JBUI.scale(8))).apply {
+                preferredSize = JBUI.size(640, 400)
+                add(panel {
+                    row("客户端:") { cell(client).align(AlignX.FILL) }
+                    row("连接协议:") { cell(protocol).align(AlignX.FILL) }
+                    row { cell(instructions).align(AlignX.FILL) }
+                }, BorderLayout.NORTH)
+                add(JScrollPane(preview), BorderLayout.CENTER)
+                add(status, BorderLayout.SOUTH)
+            }
+            override fun doOKAction() {
+                CopyPasteManager.getInstance().setContents(StringSelection(preview.text))
+                status.text = "配置已复制"
+            }
+            override fun getPreferredFocusedComponent(): JComponent = client
+        }.show()
     }
 
-    private fun mcpAuthHeaders(): String {
-        val st = NexusLinkSettings.instance.state
-        if (!st.requireAuth) return ""
-        val token = st.proxyToken
-        if (token.isBlank()) return ""
-        return """,
-  "headers": {
-    "Authorization": "Bearer $token"
-  }"""
-    }
-
-    /** 开 LAN 且多网卡时选择写入 mcp.json 的 IP；取消则返回 null。 */
+    /** 开 LAN 且多网卡时选择写入配置的 IP；取消则返回 null。 */
     private fun pickCopyHost(listenLan: Boolean): String? {
         val (auto, choices) = LanHost.copyHostChoices(listenLan)
         if (choices.isEmpty()) return auto
@@ -429,7 +363,7 @@ class NexusLinkConfigurable : Configurable {
                 init()
             }
             override fun createCenterPanel(): JComponent = panel {
-                row { label("选择网卡 IP（写入 mcp.json 的 url）") }
+                row { label("选择网卡 IP（写入配置的服务器地址）") }
                 row { cell(combo).align(AlignX.FILL) }
             }
             override fun getPreferredFocusedComponent(): JComponent = combo

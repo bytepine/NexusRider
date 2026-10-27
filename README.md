@@ -55,7 +55,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 跨机与身份验证见 [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md)。
 
-设置面板按传输协议（Streamable HTTP / SSE）与客户端（Cursor / CodeBuddy）各选一项，一次生成一份；开 LAN 且多网卡时先选 IP。生成的 Bearer 仅本机 token。
+在设置面板点击「MCP 客户端配置…」打开独立窗口，选择客户端与协议后复制。使用已保存设置和实际监听端口；修改设置后先点 IDE 的「应用」。复制与关闭按钮固定在底部，开 LAN 且多网卡时先选 IP。生成的 Bearer 仅本机 token。
 
 ### 4. 状态栏
 
@@ -78,6 +78,8 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 
 默认 `http://127.0.0.1:6800/stream`。端口被占用会自动换成下一个端口，以启动通知或设置面板为准。绑定 `127.0.0.1`。
 
+客户端配置与 Desktop 保持一致：**Cursor / Windsurf**、**Codex**、**Claude Code / VS Code**、**CodeBuddy**、**Cline**、**Roo Code** 六组。相同格式合并显示，粘贴位置单独说明，复制内容不含注释。Codex 生成 `~/.codex/config.toml`（或自定义 `CODEX_HOME`）所需的 TOML，自动使用 Streamable HTTP；其余客户端生成 JSON 条目。Claude Code 使用 `.mcp.json` 的 `mcpServers`，VS Code 使用 `.vscode/mcp.json` 的 `servers`；已有同名条目时替换，保留其他配置。
+
 **Cursor**（`~/.cursor/mcp.json`）。Token 用设置面板 **本机 Token** 旁的「复制」。可写多个：`Bearer <tok1>, <tok2>`。关闭「启用 MCP 身份验证」时可不带 `headers`。规则见 [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-身份验证)。
 
 ```json
@@ -93,7 +95,7 @@ JetBrains Rider 端 MCP **代理**：本地 HTTP 服务器（默认 `:6800`）�
 }
 ```
 
-旧版 MCP 客户端可用 `http://127.0.0.1:6800/sse`。CodeBuddy / Windsurf 在设置面板选对应客户端后再复制。
+旧版 MCP 客户端可用 `http://127.0.0.1:6800/sse`。在配置窗口选择对应客户端后复制。
 
 已连接时 `tools/list` 合并 UE 工具。多实例并发可在 `arguments` 中带 `targetPort`（一次性 WS，不改长连接绑定），须为 1024–65535 的整数；非法显式端口返回 `-32602`，不会转发到当前实例或返回缓存。
 
