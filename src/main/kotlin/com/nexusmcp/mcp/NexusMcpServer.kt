@@ -297,14 +297,28 @@ private class McpHttpHandler(
 
                 val callFields = "session=${McpDiagnostics.session(sessionId)} $fields"
                 if (msg?.optString("method") == "tools/call") log.info("MCP 请求开始 $callFields")
-                val responseJson = session.dispatcher.dispatch(body)
+                var streamed = false
+                val responseJson = session.dispatcher.dispatch(body) { event ->
+                    if (request.headers().get(HttpHeaderNames.ACCEPT).orEmpty().contains("text/event-stream") && ctx.channel().isActive) {
+                        if (!streamed) {
+                            val response = DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
+                            response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/event-stream")
+                            response.headers().set(MCP_SESSION_HEADER, sessionId)
+                            HttpUtil.setTransferEncodingChunked(response, true)
+                            ctx.writeAndFlush(response); streamed = true
+                        }
+                        ctx.writeAndFlush(DefaultHttpContent(Unpooled.copiedBuffer("data: $event\n\n", StandardCharsets.UTF_8)))
+                    }
+                }
                 val timing = "elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}"
                 val failure = McpDiagnostics.failure(responseJson)
                 if (failure != null) log.warn("MCP 请求失败 $callFields $failure $timing")
                 else if (msg?.optString("method") in listOf("initialize", "notifications/initialized", "tools/list", "tools/call")) {
                     log.info("MCP 请求完成 $callFields $timing")
                 }
-                if (responseJson.isBlank()) {
+                if (streamed) {
+                    ctx.writeAndFlush(DefaultLastHttpContent(Unpooled.copiedBuffer("data: $responseJson\n\n", StandardCharsets.UTF_8)))
+                } else if (responseJson.isBlank()) {
                     sendNoContent(ctx, HttpResponseStatus.ACCEPTED, sessionId)
                 } else {
                     sendResponse(ctx, HttpResponseStatus.OK, responseJson, "application/json", sessionId)

@@ -25,6 +25,7 @@ fun main() {
     testStartupLogs(testRoot.resolve("startup-logs").toPath())
     testHttpSessions()
     testLegacyV2Compatibility()
+    testEditorOperationWire()
     fun query(port: Int, host: String = "", section: String = "All") = JSONObject()
         .put("Capability", "GetAssetBlueprint")
         .put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP").put("Sections", JSONArray(listOf(section))))
@@ -272,4 +273,46 @@ private fun testToolListReconnect() {
             check(timeout.status == WsRequestStatus.TIMEOUT && modern.calls.get() == 5) { "failed/timed-out writes must be sent once" }
         } finally { manager.disconnect() }
     } }
+}
+
+
+private fun testEditorOperationWire() {
+    val ready = CountDownLatch(1)
+    val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+    val count = AtomicInteger()
+    val ws = object : WebSocketServer(InetSocketAddress("127.0.0.1", 0)) {
+        override fun onStart() { ready.countDown() }
+        override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {}
+        override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {}
+        override fun onError(conn: WebSocket?, ex: Exception) { ready.countDown() }
+        override fun onMessage(conn: WebSocket, message: String) {
+            val request = JSONObject(message)
+            when (request.optString("method")) {
+                "tools/call" -> {
+                    conn.send(JSONObject().put("jsonrpc","2.0").put("id",-100).put("result",JSONObject()).toString())
+                    conn.send(JSONObject().put("jsonrpc","2.0").put("method","notifications/progress")
+                        .put("params",JSONObject().put("progressToken","token").put("progress",1)).toString())
+                }
+                "notifications/cancelled" -> conn.send(JSONObject().put("jsonrpc","2.0")
+                    .put("id",request.getJSONObject("params").get("requestId"))
+                    .put("result",JSONObject().put("cancelled",true)).toString())
+            }
+        }
+    }
+    ws.start(); check(ready.await(3,TimeUnit.SECONDS))
+    val http = HttpServer.create(InetSocketAddress("127.0.0.1",0),0)
+    http.createContext("/status") { exchange ->
+        val body = JSONObject().put("server","NexusLink").put("wsPort",ws.port).toString().toByteArray()
+        exchange.sendResponseHeaders(200,body.size.toLong()); exchange.responseBody.use { it.write(body) }
+    }
+    http.start()
+    val manager = UnrealInstanceManager()
+    try {
+        val result = manager.forwardToolCallToPort(http.address.port,JSONObject().put("name","GetEditorOperation")
+            .put("_meta",JSONObject().put("nexusSessionId","wire-test")),3000L, progress = {
+            count.incrementAndGet(); cancelled.set(true)
+        }, isCancelled = {cancelled.get()})
+        check(result.status == WsRequestStatus.OK && result.response?.getJSONObject("result")?.getBoolean("cancelled") == true)
+        check(count.get() == 1)
+    } finally { manager.disconnect(); http.stop(0); ws.stop(1000) }
 }

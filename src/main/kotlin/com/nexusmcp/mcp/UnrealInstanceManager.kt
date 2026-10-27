@@ -584,6 +584,8 @@ class UnrealInstanceManager {
         params: JSONObject,
         timeoutMs: Long = TOOLS_CALL_TIMEOUT_MS,
         host: String = LanHost.LOOPBACK,
+        progress: ((JSONObject) -> Unit)? = null,
+        isCancelled: (() -> Boolean)? = null,
     ): WsRequestOutcome {
         val h = LanHost.normalizeHost(host)
         val info = instances.find { it.port == port && LanHost.normalizeHost(it.host) == h }
@@ -627,6 +629,7 @@ class UnrealInstanceManager {
                 override fun onMessage(message: String) {
                     try {
                         val json = JSONObject(message)
+                        if (json.optString("method") == "notifications/progress") { progress?.invoke(json); return }
                         val rid = json.optInt("id", -1)
                         if (needAuth && !authed && rid == currentAuthId) {
                             authed = json.optJSONObject("result")?.optBoolean("ok") == true
@@ -665,7 +668,17 @@ class UnrealInstanceManager {
                 return WsRequestOutcome.disconnected()
             }
             // 超时后强制关闭连接，避免挂起
-            if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            var cancelSent = false
+            while (latch.count > 0 && System.nanoTime() < deadline) {
+                if (!cancelSent && isCancelled?.invoke() == true && oneShot.isOpen && authed) {
+                    oneShot.send(JSONObject().put("jsonrpc", "2.0").put("method", "notifications/cancelled")
+                        .put("params", JSONObject().put("requestId", callId).put("_meta", params.optJSONObject("_meta"))).toString())
+                    cancelSent = true
+                }
+                latch.await(50, TimeUnit.MILLISECONDS)
+            }
+            if (latch.count > 0) {
                 log.warn("UE 一次性转发失败 stage=timeout host=${McpDiagnostics.text(h)} port=$port id=$callId timeout_ms=$timeoutMs")
                 try { oneShot.close() } catch (_: Exception) { }
                 return WsRequestOutcome.timeout()

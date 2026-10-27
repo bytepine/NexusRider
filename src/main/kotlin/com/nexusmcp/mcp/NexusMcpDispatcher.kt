@@ -41,6 +41,25 @@ class NexusMcpDispatcher(
     @Volatile var state = McpSessionState.WaitingForInitialize
         private set
 
+    private val operationSession = java.util.UUID.randomUUID().toString()
+    private class OperationRequest(val progress: ((JSONObject) -> Unit)?) { val cancelled = java.util.concurrent.atomic.AtomicBoolean(false) }
+    private val operationRequests = java.util.concurrent.ConcurrentHashMap<String, OperationRequest>()
+    private fun operationKey(id: Any?) = org.json.JSONObject.valueToString(id ?: JSONObject.NULL)
+    private fun isEditorOperation(name: String) = name in setOf("GetEditorSlate", "CaptureEditorSlate", "InteractEditorSlate", "ControlEditorAutomation", "ListEditorAutomationTests", "CompileEditorLiveCoding", "GetEditorOperation")
+
+    fun dispatch(jsonLine: String, notify: ((JSONObject) -> Unit)? = null): String {
+        val message = try { JSONObject(jsonLine) } catch (_: Exception) { return dispatchMessage(jsonLine) }
+        if (message.optString("method") == "notifications/cancelled") {
+            operationRequests[operationKey(message.optJSONObject("params")?.opt("requestId"))]?.cancelled?.set(true)
+            return ""
+        }
+        if (message.optString("method") != "tools/call") return dispatchMessage(jsonLine)
+        val key = operationKey(message.opt("id"))
+        val request = OperationRequest(notify)
+        if (operationRequests.putIfAbsent(key, request) != null) return makeError(message.opt("id"), -32600, "Duplicate active request id")
+        try { return dispatchMessage(jsonLine) } finally { operationRequests.remove(key, request) }
+    }
+
     private val alwaysAllow = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     companion object {
@@ -73,7 +92,7 @@ class NexusMcpDispatcher(
     /**
      * 处理一条 JSON-RPC 消息，返回响应 JSON 字符串。
      */
-    fun dispatch(jsonLine: String): String {
+    private fun dispatchMessage(jsonLine: String): String {
         val msg: JSONObject
         try {
             msg = JSONObject(jsonLine)
@@ -287,7 +306,7 @@ class NexusMcpDispatcher(
         val requestArgs = params.optJSONObject("arguments")
         var callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
         val now = System.currentTimeMillis()
-        hub.lookupFresh(callInfo, now)?.let { hit ->
+        (if (isEditorOperation(callInfo.capability)) null else hub.lookupFresh(callInfo, now))?.let { hit ->
             return makeResult(id, ProxySessionHub.wrapCached(hit.result, hit.kind, hit.snapshotAt))
         }
 
@@ -305,7 +324,16 @@ class NexusMcpDispatcher(
         }
 
         // 远端工具转发：默认长连接；仅显式 targetPort 走一次性 WS。
-        var outcome = if (targetPort > 0) {
+        var outcome = if (isEditorOperation(callInfo.capability)) {
+            if (targetPort <= 0) unrealManager.ensureLongConnection()
+            val meta = forwardParams.optJSONObject("_meta") ?: JSONObject()
+            meta.put("nexusSessionId", operationSession)
+            forwardParams.put("_meta", meta)
+            val request = operationRequests[operationKey(id)]
+            unrealManager.forwardToolCallToPort(if (targetPort > 0) targetPort else unrealManager.connectedPort, forwardParams,
+                host = if (targetPort > 0) targetHost else unrealManager.connectedHost,
+                progress = request?.progress, isCancelled = { request?.cancelled?.get() == true })
+        } else if (targetPort > 0) {
             unrealManager.forwardToolCallToPort(targetPort, forwardParams, host = targetHost)
         } else {
             unrealManager.ensureLongConnection()
@@ -321,7 +349,7 @@ class NexusMcpDispatcher(
         }
         when (outcome.status) {
             WsRequestStatus.DISCONNECTED -> {
-                hub.lookupDegraded(callInfo, now)?.let { snap ->
+                (if (isEditorOperation(callInfo.capability)) null else hub.lookupDegraded(callInfo, now))?.let { snap ->
                     log.warn("UE 未连接，返回缓存快照 tool=${McpDiagnostics.text(toolName)} capability=${McpDiagnostics.text(callInfo.capability)} snapshot=${McpDiagnostics.text(snap.snapshotAt)}")
                     return makeResult(id, ProxySessionHub.wrapDegraded(snap.result, snap.snapshotAt))
                 }
@@ -356,7 +384,7 @@ class NexusMcpDispatcher(
                 ?: return makeError(id, INTERNAL_ERROR, "Invalid response from UE instance")
             // 等待期间切换了长连接时，不将响应写入其他实例的缓存。
             if (targetPort <= 0 && callInfo.cacheScope != unrealManager.cacheScope) return makeResult(id, raw)
-            makeResult(id, hub.store(callInfo, raw, now))
+            makeResult(id, if (isEditorOperation(callInfo.capability)) raw else hub.store(callInfo, raw, now))
         } else if (response.has("error")) {
             val err = response.getJSONObject("error")
             makeError(id, err.optInt("code", INTERNAL_ERROR), err.optString("message", "Unknown error"))
