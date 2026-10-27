@@ -4,7 +4,7 @@
 
 **Connect AI clients to Unreal Engine from JetBrains Rider.** NexusRider is the IDE integration for [NexusLink — Unreal Engine MCP](https://github.com/bytepine/NexusLink), listed as **Nexus MCP** in the plugin marketplace. With NexusLink installed in UE, AI clients can read project context, edit assets, and debug running sessions.
 
-[Install & use](#install--use) · [Download Rider plugin](https://github.com/bytepine/NexusRider/releases) · [UE plugin on Fab (NexusMCP)](https://www.fab.com/listings/60097027-d7a5-4f73-87f3-81edb1b6ef0b) · [NexusLink documentation](https://github.com/bytepine/NexusLink/blob/master/docs/README.md)
+[Install & use](#install--use) · [Download Rider plugin](https://github.com/bytepine/NexusRider/releases) · [UE plugin (NexusLink)](https://github.com/bytepine/NexusLink) · [NexusLink documentation](https://github.com/bytepine/NexusLink/blob/master/docs/README.md)
 
 The plugin discovers UE instances, generates AI client configuration, and switches between projects. Blueprints, assets, PIE, and other engine capabilities come from NexusLink. The local MCP HTTP server defaults to `:6800` and forwards tool calls over WebSocket.
 
