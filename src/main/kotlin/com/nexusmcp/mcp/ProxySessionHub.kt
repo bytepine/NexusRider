@@ -116,10 +116,12 @@ class ProxySessionHub {
         }
         if (stored.optBoolean("isError", false)) return stored
         val ttl = ProxySessionPolicy.extractTtlMeta(stored, info.capability, nowMs)
-        if (ProxySessionPolicy.contentTextLength(stored) > ProxySessionPolicy.OFFLOAD_CHARS) {
+        val content = stored.optJSONArray("content")
+        val hasImage = content != null && (0 until content.length()).any { content.optJSONObject(it)?.optString("type") == "image" }
+        if (ProxySessionPolicy.contentTextLength(stored) > ProxySessionPolicy.OFFLOAD_CHARS && !hasImage) {
             stored = offload(stored)
         }
-        if (!info.isWrite && !info.isBatch && info.capability.isNotEmpty()) {
+        if (!info.isWrite && !info.isBatch && info.capability.isNotEmpty() && !hasImage) {
             synchronized(cacheLock) {
                 cache[info.exactKey] = CacheEntry(
                     info.exactKey, info.identityKey, info.cacheScope, info.capability, info.identity, info.sections,

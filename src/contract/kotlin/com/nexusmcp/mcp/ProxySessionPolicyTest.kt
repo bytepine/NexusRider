@@ -97,6 +97,17 @@ fun main() {
     legacyRoot.listFiles()?.forEach { it.deleteRecursively() }
     check(!file.toPath().startsWith(legacyRoot.toPath()) && file.isFile) { "old 2.x startup cleanup must not touch new payloads" }
     check(hub.lookupFresh(offloadCall, 2001) == null) { "offloading must preserve TTL metadata" }
+
+    val imageMetadata = JSONObject().put("FilePath", "capture.png").put("Padding", "x".repeat(ProxySessionPolicy.OFFLOAD_CHARS + 1))
+    val inlineImage = JSONObject().put("type", "image").put("mimeType", "image/png").put("data", "aW1hZ2U=")
+    val imageCall = ProxySessionPolicy.parseCall("GetAssetBlueprint", JSONObject().put("AssetPath", "/Game/ImageProbe"))
+    val imageResult = hub.store(imageCall, JSONObject()
+        .put("structuredContent", imageMetadata)
+        .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", imageMetadata.toString())).put(inlineImage)), 1000)
+    check(imageResult.getJSONArray("content").length() == 2) { "image must remain inline" }
+    check(imageResult.getJSONArray("content").getJSONObject(1).toString() == inlineImage.toString()) { "image bytes and MIME were changed" }
+    check(imageResult.getJSONObject("structuredContent").getString("FilePath") == "capture.png")
+    check(hub.lookupFresh(imageCall, 1000) == null) { "images must not enter snapshot cache" }
     val largeFailure = JSONObject(large.toString()).put("isError", true)
     check(otherHub.store(b, largeFailure, 1000).toString() == largeFailure.toString()) { "large errors must not be replaced with successful file summaries" }
     check(otherHub.lookupFresh(b, 1100) == null)

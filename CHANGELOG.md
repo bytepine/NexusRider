@@ -9,6 +9,8 @@
 
 ### Changed
 
+- 含标准 MCP 图片块的响应保留内联图片及原有元数据，跳过大文本转存与代理缓存。
+
 - 插件展示名增加 Unreal Engine，统一中英文 README / 商店介绍，突出 NexusLink 用途、UE 插件依赖与 GitHub 安装入口；接入步骤改用包含身份验证的生成配置。
 
 ### Added
