@@ -184,8 +184,9 @@ private class RoutingInstance(name: String, private val toolNames: List<String> 
                     val capability = if (params.getString("name") == "CallCapability") args!!.getString("Capability") else params.getString("name")
                     val inner = if (params.getString("name") == "CallCapability") args!!.getJSONObject("Arguments") else args!!
                     val owner = params.optJSONObject("_meta")?.optString("nexusSessionId")?.takeIf { it.isNotEmpty() } ?: conn.remoteSocketAddress.toString()
-                    val operation = if (capability == "GetEditorOperation") inner.getString("OperationId") else java.util.UUID.randomUUID().toString()
-                    if (capability == "GetEditorOperation") result.put("isError", operationOwners[operation] != owner)
+                    val ownedCall = capability == "GetEditorOperation" || capability == "ControlEditorOperation"
+                    val operation = if (ownedCall) inner.getString("OperationId") else java.util.UUID.randomUUID().toString()
+                    if (ownedCall) result.put("isError", operationOwners[operation] != owner)
                     else operationOwners[operation] = owner
                     result.put("content", JSONArray().put(JSONObject().put("type", "text").put("text", JSONObject().put("OperationId", operation).toString())))
                 }
@@ -271,6 +272,8 @@ private fun testEditorOperationRouting() {
                 val query = JSONObject().put("OperationId", operation)
                 check(!call(first, "GetEditorOperation", query, direct, explicit).optBoolean("isError")) { "$capability changed owner (direct=$direct explicit=$explicit)" }
                 check(call(second, "GetEditorOperation", query, direct, explicit).optBoolean("isError")) { "operation crossed MCP sessions" }
+                check(call(second, "ControlEditorOperation", query, direct, explicit).optBoolean("isError")) { "foreign cancellation accepted" }
+                check(!call(first, "ControlEditorOperation", query, direct, explicit).optBoolean("isError")) { "cancel owner changed" }
                 val before = instance.calls.get()
                 call(first, capability, JSONObject(), direct, explicit)
                 check(instance.calls.get() == before + 1) { "$capability cached a task response" }

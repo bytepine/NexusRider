@@ -48,7 +48,7 @@ object ProxySessionPolicy {
     // 路由与缓存共用同一清单；新增编辑器任务时需同步三端。
     private val editorOperations = setOf(
         "GetEditorSlate", "CaptureEditorSlate", "InteractEditorSlate", "ControlEditorAutomation",
-        "ListEditorAutomationTests", "CompileEditorLiveCoding", "GetEditorOperation",
+        "ListEditorAutomationTests", "CompileEditorLiveCoding", "GetEditorOperation", "ControlEditorOperation",
         "GetEditorPCG", "ControlEditorPCG", "GetEditorNiagara", "ExecNiagaraStackFix", "SearchAssetsSemantic", "GetProjectSkills",
         "GetEditorAnimation", "ControlEditorAnimation", "ControlEditorNiagara", "ControlEditorGameFeature", "GetEditorScene", "ControlEditorScene",
     )
