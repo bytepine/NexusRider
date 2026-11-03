@@ -45,6 +45,15 @@ object ProxySessionPolicy {
 
     private val destructiveCaps = setOf("deleteasset", "renameasset")
     private val stopPie = setOf("stop", "end", "quit", "endplay", "end_play", "end-play")
+    // 路由与缓存共用同一清单；新增编辑器任务时需同步三端。
+    private val editorOperations = setOf(
+        "GetEditorSlate", "CaptureEditorSlate", "InteractEditorSlate", "ControlEditorAutomation",
+        "ListEditorAutomationTests", "CompileEditorLiveCoding", "GetEditorOperation",
+        "GetEditorPCG", "ControlEditorPCG", "GetEditorNiagara", "ExecNiagaraStackFix", "SearchAssetsSemantic", "GetProjectSkills",
+        "GetEditorAnimation", "ControlEditorAnimation", "ControlEditorNiagara", "ControlEditorGameFeature", "GetEditorScene", "ControlEditorScene",
+    )
+
+    fun isEditorOperation(name: String): Boolean = name in editorOperations
 
     fun parseWriteGate(raw: String?): WriteGateMode = when (raw) {
         "off" -> WriteGateMode.OFF
@@ -186,7 +195,7 @@ object ProxySessionPolicy {
     }
 
     fun extractTtlMeta(result: JSONObject, cap: String, nowMs: Long): TtlMeta {
-        val src = resultTextObject(result) ?: result
+        val src = result.optJSONObject("structuredContent") ?: resultTextObject(result) ?: result
         var snapshotAtMs = nowMs
         var snapshotAtIso = java.time.Instant.ofEpochMilli(nowMs).toString()
         val snap = src.optString("SnapshotAt", src.optString("_snapshotAt", ""))
@@ -200,7 +209,7 @@ object ProxySessionPolicy {
         val ttlKey = if (src.has("TtlSeconds")) "TtlSeconds" else "_ttl_seconds"
         if (src.has(ttlKey)) {
             val sec = src.optDouble(ttlKey, -1.0)
-            if (sec > 0) ttlMs = (sec * 1000).toLong()
+            if (sec.isFinite() && sec >= 0) ttlMs = (sec * 1000).toLong()
         }
         return TtlMeta(snapshotAtMs, ttlMs, snapshotAtIso)
     }

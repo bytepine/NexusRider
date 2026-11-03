@@ -12,6 +12,8 @@ Ports and switch layers: [NexusLink usage guide](https://github.com/bytepine/Nex
 
 ---
 
+Editor operations, including Slate, Automation, PCG, Niagara, animation, Game Features, semantic search and scene tools, use the same MCP session identity for creation, polling and wait cancellation. Progress notifications are supported. Task responses are never cached and task writes are not retried after disconnection; stopping tests requires an explicit request, and Live Coding does not promise cancellation.
+
 Standard MCP PNG/JPEG screenshot blocks stay inline with their FilePath metadata. Responses containing images bypass large-text offloading and proxy caching.
 
 ## Requirements
@@ -67,7 +69,7 @@ Open the separate MCP client configuration window from Settings. Apply settings 
 
 The status bar always shows the current connection state. The tooltip also indicates when agent forwarding is paused.
 
-Batch calls, including partial failures, invalidate the target instance's read cache. Failed reads are never cached. Large-response files are isolated between hubs; only files older than one hour are cleaned up.
+Batch calls and project-wide writes without an asset identity, including GameplayTags changes and partial failures, invalidate the target UE instance's read cache while preserving other instances. An explicit upstream `TtlSeconds: 0` disables caching and clears older snapshots for the same read target, including disconnected snapshots; both standard `structuredContent` and text JSON are supported. Failed reads are never cached. Large-response files are isolated between hubs; only files older than one hour are cleaned up.
 
 Released 2.x and current tool-call formats are supported without rewriting requests. New payloads use a separate temporary root so older 2.x processes cannot delete them during startup cleanup.
 

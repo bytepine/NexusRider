@@ -97,29 +97,34 @@ class ProxySessionHub {
     }
 
     fun lookupFresh(info: CallInfo, nowMs: Long): CacheHit? {
-        if (info.isWrite || info.isBatch) return null
+        if (info.isWrite || info.isBatch || ProxySessionPolicy.isEditorOperation(info.capability)) return null
         return lookup(info, nowMs, allowExpired = false)
     }
 
     fun lookupDegraded(info: CallInfo, nowMs: Long): CacheHit? {
-        if (info.isWrite || info.isBatch) return null
+        if (info.isWrite || info.isBatch || ProxySessionPolicy.isEditorOperation(info.capability)) return null
         return lookup(info, nowMs, allowExpired = true)
     }
 
     fun store(info: CallInfo, result: JSONObject, nowMs: Long): JSONObject {
         var stored = JSONObject(result.toString())
-        // 批量操作可能部分成功，先失效目标实例，避免保留旧快照。
+        // 项目级写入无法按资产定位；部分失败也清理本实例，避免旧快照误导读回。
         if (info.isBatch) {
             invalidateIdentity("", info.cacheScope)
-        } else if (info.isWrite && info.identity.isNotEmpty()) {
+        } else if (info.isWrite) {
             invalidateIdentity(info.identity, info.cacheScope)
         }
-        if (stored.optBoolean("isError", false)) return stored
+        if (stored.optBoolean("isError", false) || ProxySessionPolicy.isEditorOperation(info.capability)) return stored
         val ttl = ProxySessionPolicy.extractTtlMeta(stored, info.capability, nowMs)
         val content = stored.optJSONArray("content")
         val hasImage = content != null && (0 until content.length()).any { content.optJSONObject(it)?.optString("type") == "image" }
         if (ProxySessionPolicy.contentTextLength(stored) > ProxySessionPolicy.OFFLOAD_CHARS && !hasImage) {
             stored = offload(stored)
+        }
+        if (ttl.ttlMs == 0L) {
+            // 同一读取对象的旧 All/section/degraded 快照也不能继续复用。
+            synchronized(cacheLock) { cache.entries.removeIf { it.value.identityKey == info.identityKey } }
+            return stored
         }
         if (!info.isWrite && !info.isBatch && info.capability.isNotEmpty() && !hasImage) {
             synchronized(cacheLock) {

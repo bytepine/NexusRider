@@ -26,6 +26,8 @@ fun main() {
     testHttpSessions()
     testLegacyV2Compatibility()
     testEditorOperationWire()
+    testCacheContracts()
+    testEditorOperationRouting()
     fun query(port: Int, host: String = "", section: String = "All") = JSONObject()
         .put("Capability", "GetAssetBlueprint")
         .put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP").put("Sections", JSONArray(listOf(section))))
@@ -152,6 +154,7 @@ private fun testLegacyV2Compatibility() {
 /** 本地 HTTP/WS 协议替身，验证真实 Manager 与 Dispatcher，不启动 UE。 */
 private class RoutingInstance(name: String, private val toolNames: List<String> = emptyList()) : AutoCloseable {
     val calls = AtomicInteger()
+    private val operationOwners = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val ready = CountDownLatch(1)
     private val ws = object : WebSocketServer(InetSocketAddress("127.0.0.1", 0)) {
         override fun onStart() { ready.countDown() }
@@ -176,6 +179,16 @@ private class RoutingInstance(name: String, private val toolNames: List<String> 
                 if (args?.optBoolean("ContractTimeout") == true) return
                 result.put("content", JSONArray().put(JSONObject().put("type", "text")
                     .put("text", JSONObject().put("source", name).toString())))
+                if (name == "operations") {
+                    val params = request.getJSONObject("params")
+                    val capability = if (params.getString("name") == "CallCapability") args!!.getString("Capability") else params.getString("name")
+                    val inner = if (params.getString("name") == "CallCapability") args!!.getJSONObject("Arguments") else args!!
+                    val owner = params.optJSONObject("_meta")?.optString("nexusSessionId")?.takeIf { it.isNotEmpty() } ?: conn.remoteSocketAddress.toString()
+                    val operation = if (capability == "GetEditorOperation") inner.getString("OperationId") else java.util.UUID.randomUUID().toString()
+                    if (capability == "GetEditorOperation") result.put("isError", operationOwners[operation] != owner)
+                    else operationOwners[operation] = owner
+                    result.put("content", JSONArray().put(JSONObject().put("type", "text").put("text", JSONObject().put("OperationId", operation).toString())))
+                }
                 if (args?.optBoolean("ContractFailure") == true) result.put("isError", true).put("structuredContent",
                     JSONObject().put("ErrorKind", "ArgInvalid").put("bRolledBack", false).put("Error", "contract failure"))
             }
@@ -195,6 +208,75 @@ private class RoutingInstance(name: String, private val toolNames: List<String> 
         http.start()
     }
     override fun close() { http.stop(0); ws.stop(1000) }
+}
+
+private fun testCacheContracts() {
+    val cached = JSONObject().put("content", JSONArray())
+    for (noCache in listOf(
+        JSONObject().put("content", JSONArray().put(JSONObject().put("type", "text").put("text", """{"TtlSeconds":0}"""))),
+        JSONObject().put("structuredContent", JSONObject().put("TtlSeconds", 0)),
+        JSONObject().put("content", JSONArray().put(JSONObject().put("type", "text").put("text", """{"_ttl_seconds":0}"""))),
+        JSONObject().put("TtlSeconds", 0),
+    )) {
+        val hub = ProxySessionHub()
+        fun read(port: Int, section: String) = ProxySessionPolicy.parseCall("GetAssetBlueprint", JSONObject().put("AssetPath", "/synthetic/BP").put("Sections", JSONArray(listOf(section))).put("targetPort", port))
+        val all = read(45000, "All"); val subset = read(45000, "Defaults"); val other = read(45001, "All")
+        for (query in listOf(all, subset, other)) hub.store(query, cached, 1000)
+        check(ProxySessionPolicy.extractTtlMeta(noCache, all.capability, 1000).ttlMs == 0L)
+        hub.store(subset, noCache, 1000)
+        for (query in listOf(all, subset)) {
+            check(hub.lookupFresh(query, 1000) == null && hub.lookupFresh(query, 1001) == null && hub.lookupDegraded(query, 100000) == null) { "zero TTL retained an exact/section/degraded snapshot" }
+        }
+        check(hub.lookupFresh(other, 1001) != null) { "zero TTL crossed instances" }
+    }
+    for (failed in listOf(false, true)) {
+        val hub = ProxySessionHub()
+        val read = ProxySessionPolicy.parseCall("GetGameplayTags", JSONObject().put("Sections", JSONArray(listOf("Hierarchy"))).put("targetPort", 45000))
+        val asset = ProxySessionPolicy.parseCall("GetAssetBlueprint", JSONObject().put("AssetPath", "/synthetic/BP").put("targetPort", 45000))
+        val other = ProxySessionPolicy.parseCall("GetGameplayTags", JSONObject().put("targetPort", 45001))
+        for (query in listOf(read, asset, other)) hub.store(query, cached, 1000)
+        val write = ProxySessionPolicy.parseCall("ManageGameplayTags", JSONObject().put("Tag", "Synthetic.Tag").put("Operations", JSONArray().put(JSONObject().put("Action", "Remove"))).put("targetPort", 45000))
+        hub.store(write, JSONObject().put("isError", failed), 1001)
+        for (query in listOf(read, asset)) check(hub.lookupFresh(query, 1002) == null && hub.lookupDegraded(query, 100000) == null) { "project write retained stale cache (partial failure=$failed)" }
+        check(hub.lookupFresh(other, 1002) != null) { "project write crossed instances" }
+    }
+}
+
+private fun testEditorOperationRouting() {
+    RoutingInstance("operations").use { instance ->
+        val manager = UnrealInstanceManager()
+        try {
+            manager.scanPortStart = instance.port; manager.scanPortEnd = instance.port
+            check(manager.connectTo(instance.port, true))
+            val first = NexusMcpDispatcher(manager); val second = NexusMcpDispatcher(manager)
+            var id = 1
+            for (dispatcher in listOf(first, second)) {
+                dispatcher.dispatch(JSONObject().put("jsonrpc", "2.0").put("id", id++).put("method", "initialize").toString())
+                dispatcher.dispatch(JSONObject().put("jsonrpc", "2.0").put("method", "notifications/initialized").toString())
+            }
+            fun call(dispatcher: NexusMcpDispatcher, capability: String, inner: JSONObject, direct: Boolean, explicit: Boolean): JSONObject {
+                val args = if (direct) JSONObject(inner.toString()) else JSONObject().put("Capability", capability).put("Arguments", inner)
+                if (explicit) args.put("targetPort", instance.port)
+                val request = JSONObject().put("jsonrpc", "2.0").put("id", id++).put("method", "tools/call")
+                    .put("params", JSONObject().put("name", if (direct) capability else "CallCapability").put("arguments", args))
+                val response = JSONObject(dispatcher.dispatch(request.toString()))
+                check(!response.has("error")) { response.toString() }; return response.getJSONObject("result")
+            }
+            val capabilities = listOf("GetEditorSlate", "CaptureEditorSlate", "InteractEditorSlate", "ControlEditorAutomation", "ListEditorAutomationTests", "CompileEditorLiveCoding",
+                "GetEditorPCG", "ControlEditorPCG", "GetEditorNiagara", "ExecNiagaraStackFix", "SearchAssetsSemantic", "GetProjectSkills",
+                "GetEditorAnimation", "ControlEditorAnimation", "ControlEditorNiagara", "ControlEditorGameFeature", "GetEditorScene", "ControlEditorScene")
+            for (capability in capabilities) for (direct in listOf(false, true)) for (explicit in listOf(false, true)) {
+                val started = call(first, capability, JSONObject(), direct, explicit)
+                val operation = JSONObject(started.getJSONArray("content").getJSONObject(0).getString("text")).getString("OperationId")
+                val query = JSONObject().put("OperationId", operation)
+                check(!call(first, "GetEditorOperation", query, direct, explicit).optBoolean("isError")) { "$capability changed owner (direct=$direct explicit=$explicit)" }
+                check(call(second, "GetEditorOperation", query, direct, explicit).optBoolean("isError")) { "operation crossed MCP sessions" }
+                val before = instance.calls.get()
+                call(first, capability, JSONObject(), direct, explicit)
+                check(instance.calls.get() == before + 1) { "$capability cached a task response" }
+            }
+        } finally { manager.disconnect() }
+    }
 }
 
 private fun testDispatcherRouting() {
