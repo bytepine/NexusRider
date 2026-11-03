@@ -52,6 +52,10 @@ class ProxySessionHub {
             size > ProxySessionPolicy.MAX_CACHE_ENTRIES
     }
     private val cacheLock = Any()
+    private val pendingEditorWrites = mutableMapOf<String, MutableSet<String>?>()
+    private var cacheDisabled = false
+    // 写入失效前发出的读取即使晚到，也不能重新填回旧快照。
+    private var cacheEpoch = 0L
     private val offloadDir = File(offloadRoot, UUID.randomUUID().toString())
 
     init {
@@ -106,15 +110,21 @@ class ProxySessionHub {
         return lookup(info, nowMs, allowExpired = true)
     }
 
-    fun store(info: CallInfo, result: JSONObject, nowMs: Long): JSONObject {
+    fun cacheGeneration(): Long = synchronized(cacheLock) { cacheEpoch }
+
+    fun store(info: CallInfo, result: JSONObject, nowMs: Long, generation: Long? = null): JSONObject {
         var stored = JSONObject(result.toString())
+        if (ProxySessionPolicy.isEditorOperation(info.capability)) {
+            observeEditorOperation(info, stored)
+            return stored
+        }
         // 项目级写入无法按资产定位；部分失败也清理本实例，避免旧快照误导读回。
         if (info.isBatch) {
             invalidateIdentity("", info.cacheScope)
         } else if (info.isWrite) {
             invalidateIdentity(info.identity, info.cacheScope)
         }
-        if (stored.optBoolean("isError", false) || ProxySessionPolicy.isEditorOperation(info.capability)) return stored
+        if (stored.optBoolean("isError", false)) return stored
         val ttl = ProxySessionPolicy.extractTtlMeta(stored, info.capability, nowMs)
         val content = stored.optJSONArray("content")
         val hasImage = content != null && (0 until content.length()).any { content.optJSONObject(it)?.optString("type") == "image" }
@@ -128,6 +138,7 @@ class ProxySessionHub {
         }
         if (!info.isWrite && !info.isBatch && info.capability.isNotEmpty() && !hasImage) {
             synchronized(cacheLock) {
+                if (cacheDisabled || pendingEditorWrites.containsKey(info.cacheScope) || (generation != null && generation != cacheEpoch)) return stored
                 cache[info.exactKey] = CacheEntry(
                     info.exactKey, info.identityKey, info.cacheScope, info.capability, info.identity, info.sections,
                     JSONObject(stored.toString()), nowMs, ttl.snapshotAtIso, ttl.ttlMs,
@@ -139,6 +150,7 @@ class ProxySessionHub {
 
     private fun lookup(info: CallInfo, nowMs: Long, allowExpired: Boolean): CacheHit? {
         synchronized(cacheLock) {
+            if (cacheDisabled || pendingEditorWrites.containsKey(info.cacheScope)) return null
             cache[info.exactKey]?.let { exact ->
                 if (usable(exact, nowMs, allowExpired, info.capability)) {
                     return CacheHit(JSONObject(exact.result.toString()), CacheKind.HIT, exact.snapshotAtIso)
@@ -158,6 +170,44 @@ class ProxySessionHub {
         return null
     }
 
+    private fun observeEditorOperation(info: CallInfo, result: JSONObject) {
+        val source = result.optJSONObject("structuredContent") ?: ProxySessionPolicy.resultTextObject(result) ?: result
+        synchronized(cacheLock) {
+            if (info.isWrite) invalidateIdentity("", info.cacheScope)
+            fun observe(snapshot: JSONObject, defaults: JSONObject? = null) {
+                val id = snapshot.optString("OperationId", defaults?.optString("OperationId", "") ?: "")
+                val state = snapshot.optString("State", defaults?.optString("State", "") ?: "")
+                if (id.isEmpty()) return
+                if (info.isWrite && state == "Running" && !cacheDisabled) {
+                    if (!pendingEditorWrites.containsKey(info.cacheScope)) {
+                        // ponytail: 跟踪有界；超限后保守停缓存，重启代理恢复，不能驱逐尚未确认结束的写入。
+                        if (pendingEditorWrites.size >= ProxySessionPolicy.MAX_CACHE_ENTRIES) {
+                            cacheDisabled = true
+                            pendingEditorWrites.clear()
+                            cache.clear()
+                            return
+                        }
+                        pendingEditorWrites[info.cacheScope] = mutableSetOf()
+                    }
+                    val pending = pendingEditorWrites[info.cacheScope]
+                    if (pending != null && pending.size >= 128 && id !in pending) pendingEditorWrites[info.cacheScope] = null
+                    else pending?.add(id)
+                } else if (state in setOf("Completed", "Failed", "Cancelled", "Interrupted")) {
+                    val pending = pendingEditorWrites[info.cacheScope]
+                    if (pending?.remove(id) == true) {
+                        invalidateIdentity("", info.cacheScope)
+                        if (pending.isEmpty()) pendingEditorWrites.remove(info.cacheScope)
+                    }
+                }
+            }
+            observe(source)
+            val defaults = source.optJSONObject("Operations_defaults")
+            source.optJSONArray("Operations")?.let { operations ->
+                for (index in 0 until operations.length()) operations.optJSONObject(index)?.let { observe(it, defaults) }
+            }
+        }
+    }
+
     private fun usable(entry: CacheEntry, nowMs: Long, allowExpired: Boolean, cap: String): Boolean {
         if (nowMs - entry.storedAtMs <= entry.ttlMs) return true
         if (!allowExpired) return false
@@ -166,6 +216,7 @@ class ProxySessionHub {
 
     private fun invalidateIdentity(identity: String, cacheScope: String) {
         synchronized(cacheLock) {
+            ++cacheEpoch
             val keys = cache.filter { it.value.cacheScope == cacheScope && (identity.isEmpty() || it.value.identity == identity) }.keys.toList()
             keys.forEach { cache.remove(it) }
         }

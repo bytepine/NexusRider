@@ -305,6 +305,7 @@ class NexusMcpDispatcher(
         val requestArgs = params.optJSONObject("arguments")
         var callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
         val now = System.currentTimeMillis()
+        val cacheGeneration = hub.cacheGeneration()
         hub.lookupFresh(callInfo, now)?.let { hit ->
             return makeResult(id, ProxySessionHub.wrapCached(hit.result, hit.kind, hit.snapshotAt))
         }
@@ -325,6 +326,7 @@ class NexusMcpDispatcher(
         // 远端工具转发：默认长连接；仅显式 targetPort 走一次性 WS。
         var outcome = if (ProxySessionPolicy.isEditorOperation(callInfo.capability)) {
             if (targetPort <= 0) unrealManager.ensureLongConnection()
+            callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
             val meta = forwardParams.optJSONObject("_meta") ?: JSONObject()
             meta.put("nexusSessionId", operationSession)
             forwardParams.put("_meta", meta)
@@ -382,8 +384,8 @@ class NexusMcpDispatcher(
             val raw = response.optJSONObject("result")
                 ?: return makeError(id, INTERNAL_ERROR, "Invalid response from UE instance")
             // 等待期间切换了长连接时，不将响应写入其他实例的缓存。
-            if (targetPort <= 0 && callInfo.cacheScope != unrealManager.cacheScope) return makeResult(id, raw)
-            makeResult(id, hub.store(callInfo, raw, now))
+            if (!ProxySessionPolicy.isEditorOperation(callInfo.capability) && targetPort <= 0 && callInfo.cacheScope != unrealManager.cacheScope) return makeResult(id, raw)
+            makeResult(id, hub.store(callInfo, raw, now, cacheGeneration))
         } else if (response.has("error")) {
             val err = response.getJSONObject("error")
             makeError(id, err.optInt("code", INTERNAL_ERROR), err.optString("message", "Unknown error"))

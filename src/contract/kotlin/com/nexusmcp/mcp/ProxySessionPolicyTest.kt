@@ -27,6 +27,7 @@ fun main() {
     testLegacyV2Compatibility()
     testEditorOperationWire()
     testCacheContracts()
+    testAsyncEditorWriteCache()
     testEditorOperationRouting()
     fun query(port: Int, host: String = "", section: String = "All") = JSONObject()
         .put("Capability", "GetAssetBlueprint")
@@ -241,6 +242,60 @@ private fun testCacheContracts() {
         for (query in listOf(read, asset)) check(hub.lookupFresh(query, 1002) == null && hub.lookupDegraded(query, 100000) == null) { "project write retained stale cache (partial failure=$failed)" }
         check(hub.lookupFresh(other, 1002) != null) { "project write crossed instances" }
     }
+}
+
+private fun testAsyncEditorWriteCache() {
+    for (format in listOf("text", "structured", "root")) for (terminal in listOf("Completed", "Failed", "Cancelled", "Interrupted")) {
+        val hub = ProxySessionHub()
+        val read = ProxySessionPolicy.parseCall("GetAssetMaterial", JSONObject().put("AssetPath", "/synthetic/M").put("targetPort", 45000))
+        val other = ProxySessionPolicy.parseCall("GetAssetMaterial", JSONObject().put("AssetPath", "/synthetic/M").put("targetPort", 45001))
+        val write = ProxySessionPolicy.parseCall("ControlEditorNiagara", JSONObject().put("targetPort", 45000))
+        val poll = ProxySessionPolicy.parseCall("GetEditorOperation", JSONObject().put("targetPort", 45000).put("OperationId", "a").put("WaitSeconds", 30))
+        fun payload(source: JSONObject): JSONObject {
+            val failed = source.optString("State") == "Failed"
+            return when (format) {
+                "structured" -> JSONObject().put("isError", failed).put("structuredContent", source)
+                "text" -> JSONObject().put("isError", failed).put("content", JSONArray().put(JSONObject().put("type", "text").put("text", source.toString())))
+                else -> source.put("isError", failed)
+            }
+        }
+        fun operation(id: String, state: String) = payload(JSONObject().put("OperationId", id).put("State", state).put("TtlSeconds", 0))
+        for (query in listOf(read, other)) hub.store(query, payload(JSONObject().put("Value", "before")), 1000)
+        hub.store(write, operation("a", "Running"), 1001)
+        hub.store(write, operation("b", "Running"), 1001)
+        val inFlightGeneration = hub.cacheGeneration()
+        hub.store(read, payload(JSONObject().put("Value", "intermediate")), 1002)
+        check(hub.lookupFresh(read, 1003) == null && hub.lookupDegraded(read, 100000) == null) { "running writes must suppress snapshots before polling" }
+        check(hub.lookupFresh(other, 1003) != null) { "pending writes crossed instances" }
+        hub.store(poll, payload(JSONObject().put("OperationId", "a").put("State", "Running").put("bWaitCancelled", true)), 1003)
+        hub.store(poll, operation("a", terminal), 1004)
+        hub.store(read, payload(JSONObject().put("Value", "intermediate")), 1005)
+        hub.store(ProxySessionPolicy.parseCall("GetEditorOperation", JSONObject().put("targetPort", 45001)), operation("b", terminal), 1006)
+        check(hub.lookupFresh(read, 1007) == null) { "another task or instance released pending writes" }
+        hub.store(poll, payload(JSONObject().put("Operations", JSONArray().put(JSONObject().put("OperationId", "b")))
+            .put("Operations_defaults", JSONObject().put("State", terminal)).put("TtlSeconds", 0)), 1008)
+        check(hub.lookupFresh(read, 1009) == null) { "terminal/list replies retained intermediate snapshots" }
+        hub.store(read, payload(JSONObject().put("Value", "late intermediate")), 1002, inFlightGeneration)
+        check(hub.lookupFresh(read, 1009) == null) { "a read issued before completion refilled caches after the terminal reply" }
+        hub.store(read, payload(JSONObject().put("Value", "after")), 1010)
+        check(hub.lookupFresh(read, 1011) != null) { "last terminal task did not restore caching" }
+        hub.store(write, operation("waited", terminal), 1012)
+        check(hub.lookupFresh(read, 1013) == null) { "write completing inside its initial wait retained snapshots" }
+        hub.store(read, payload(JSONObject().put("Value", "after-wait")), 1014)
+        check(hub.lookupFresh(read, 1015) != null) { "completed write unnecessarily blocked caching" }
+    }
+    val hub = ProxySessionHub()
+    val read = ProxySessionPolicy.parseCall("GetAssetMaterial", JSONObject().put("AssetPath", "/synthetic/M").put("targetPort", 45000))
+    val other = ProxySessionPolicy.parseCall("GetAssetMaterial", JSONObject().put("AssetPath", "/synthetic/M").put("targetPort", 45001))
+    val write = ProxySessionPolicy.parseCall("InteractEditorSlate", JSONObject().put("targetPort", 45000))
+    for (i in 0..128) hub.store(write, JSONObject().put("OperationId", i.toString()).put("State", "Running"), 1000)
+    for (i in 0..128) hub.store(ProxySessionPolicy.parseCall("GetEditorOperation", JSONObject().put("targetPort", 45000)), JSONObject().put("OperationId", i.toString()).put("State", "Completed"), 1001)
+    hub.store(read, JSONObject().put("Value", "unknown"), 1002)
+    hub.store(other, JSONObject().put("Value", "other"), 1002)
+    check(hub.lookupFresh(read, 1003) == null && hub.lookupFresh(other, 1003) != null) { "per-instance overflow must stay conservative and isolated" }
+    for (i in 1..64) hub.store(ProxySessionPolicy.parseCall("InteractEditorSlate", JSONObject().put("targetPort", 45000 + i)), JSONObject().put("OperationId", "pending").put("State", "Running"), 1004)
+    hub.store(other, JSONObject().put("Value", "unknown"), 1005)
+    check(hub.lookupFresh(other, 1006) == null) { "global tracking overflow must fail closed" }
 }
 
 private fun testEditorOperationRouting() {
