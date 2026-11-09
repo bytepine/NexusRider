@@ -19,6 +19,7 @@ import kotlin.concurrent.withLock
 data class CacheEntry(
     val exactKey: String,
     val identityKey: String,
+    val sectionKey: String,
     val cacheScope: String,
     val capability: String,
     val identity: String,
@@ -140,7 +141,7 @@ class ProxySessionHub {
             synchronized(cacheLock) {
                 if (cacheDisabled || pendingEditorWrites.containsKey(info.cacheScope) || (generation != null && generation != cacheEpoch)) return stored
                 cache[info.exactKey] = CacheEntry(
-                    info.exactKey, info.identityKey, info.cacheScope, info.capability, info.identity, info.sections,
+                    info.exactKey, info.identityKey, info.sectionKey, info.cacheScope, info.capability, info.identity, info.sections,
                     JSONObject(stored.toString()), nowMs, ttl.snapshotAtIso, ttl.ttlMs,
                 )
             }
@@ -158,7 +159,7 @@ class ProxySessionHub {
             }
             if (!info.identity.isEmpty() && info.sections != null) {
                 for (e in cache.values) {
-                    if (e.identityKey != info.identityKey) continue
+                    if (e.sectionKey != info.sectionKey) continue
                     if (!ProxySessionPolicy.sectionsCovered(e.sections, info.sections)) continue
                     val withinWindow = nowMs - e.storedAtMs <= ProxySessionPolicy.SECTION_WINDOW_MS
                     if (!withinWindow && !allowExpired) continue

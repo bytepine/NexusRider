@@ -27,6 +27,7 @@ fun main() {
     testLegacyV2Compatibility()
     testEditorOperationWire()
     testCacheContracts()
+    testSectionReadOptions()
     testAsyncEditorWriteCache()
     testEditorOperationRouting()
     fun query(port: Int, host: String = "", section: String = "All") = JSONObject()
@@ -117,6 +118,18 @@ fun main() {
     testDispatcherRouting()
     testToolListReconnect()
     println("proxy policy contract OK")
+}
+
+private fun testSectionReadOptions() {
+    fun read(component: String, property: String, section: String) = ProxySessionPolicy.parseCall("GetAssetBlueprint", JSONObject()
+        .put("AssetPath", "/synthetic/BP").put("ComponentName", component)
+        .put("PropertyPaths", JSONArray(listOf(property))).put("Sections", JSONArray(listOf(section))))
+    val hub = ProxySessionHub()
+    hub.store(read("Capsule", "CollisionEnabled", "All"), JSONObject().put("content", JSONArray()), 1000)
+    check(hub.lookupFresh(read("Capsule", "CollisionEnabled", "Component"), 1100) != null)
+    for (request in listOf(read("Mesh", "CollisionEnabled", "Component"), read("Capsule", "bGenerateOverlapEvents", "Component"))) {
+        check(hub.lookupFresh(request, 1100) == null && hub.lookupDegraded(request, 100000) == null) { "section cache crossed read options" }
+    }
 }
 
 /** 已发布 2.x 的名称、业务参数和元数据只在策略层解析，不改写请求。 */

@@ -20,6 +20,7 @@ data class CallInfo(
     val sections: List<String>?,
     val exactKey: String,
     val identityKey: String,
+    val sectionKey: String,
     val cacheScope: String,
     val isWrite: Boolean,
     val isBatch: Boolean,
@@ -187,9 +188,11 @@ object ProxySessionPolicy {
         val sections = extractSections(inner, legacy)
         val exactKey = JSONArray(listOf(cacheScope, toolName, capability, stableJson(inner))).toString()
         val identityKey = JSONArray(listOf(cacheScope, capability, identity)).toString()
+        val sectionArgs = JSONObject(inner.toString()).apply { remove(if (legacy) "sections" else "Sections") }
+        val sectionKey = JSONArray(listOf(cacheScope, toolName, capability, stableJson(sectionArgs))).toString()
         return CallInfo(
             toolName, capability, inner, identity, sections,
-            exactKey, identityKey, cacheScope,
+            exactKey, identityKey, sectionKey, cacheScope,
             isBatch || isWriteCapability(capability), isBatch,
         )
     }
