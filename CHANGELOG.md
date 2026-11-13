@@ -1,4 +1,6 @@
-# Changelog — nexus-rider (Rider 插件)
+# 更新日志 — NexusRider
+
+**语言 / Language**: **简体中文** · [English](CHANGELOG.en.md)
 
 所有变更记录遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 格式。
 版本号遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。

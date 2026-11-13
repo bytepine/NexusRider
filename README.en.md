@@ -1,14 +1,14 @@
-**Language / Language**: [简体中文](README.md) · **English**
+**语言 / Language**: [简体中文](README.md) · **English**
 
 # Nexus MCP for Unreal Engine — JetBrains Rider
 
 **Connect AI clients to Unreal Engine from JetBrains Rider.** NexusRider is the IDE integration for [NexusLink — Unreal Engine MCP](https://github.com/bytepine/NexusLink), listed as **Nexus MCP** in the plugin marketplace. With NexusLink installed in UE, AI clients can read project context, edit assets, and debug running sessions.
 
-[Install & use](#install--use) · [Download Rider plugin](https://github.com/bytepine/NexusRider/releases) · [UE plugin (NexusLink)](https://github.com/bytepine/NexusLink) · [NexusLink documentation](https://github.com/bytepine/NexusLink/blob/master/docs/README.md)
+[Install & use](#install--use) · [Download Rider plugin](https://github.com/bytepine/NexusRider/releases) · [UE plugin (NexusLink)](https://github.com/bytepine/NexusLink) · [NexusLink documentation](https://github.com/bytepine/NexusLink/blob/master/docs/README.en.md)
 
 The plugin discovers UE instances, generates AI client configuration, and switches between projects. Blueprints, assets, PIE, and other engine capabilities come from NexusLink. The local MCP HTTP server defaults to `:6800` and forwards tool calls over WebSocket.
 
-Ports and switch layers: [NexusLink usage guide](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md). This plugin is the IDE layer of the three-layer switch. Do not run NexusDesktop or the VSCode proxy on the same machine at the same time.
+Ports and switch layers: [NexusLink usage guide](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.en.md). This plugin is the IDE layer of the three-layer switch. Do not run NexusDesktop or the VSCode proxy on the same machine at the same time.
 
 ---
 
@@ -33,7 +33,7 @@ Standard MCP PNG/JPEG screenshot blocks stay inline with their FilePath metadata
 
 ### 1. UE prerequisites
 
-1. Install and enable NexusLink, then check **Enable MCP Server** ([usage-guide §2](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md))
+1. Install and enable NexusLink, then check **Enable MCP Server** ([usage-guide §2](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.en.md))
 2. If unchecked, scans are empty and the status bar shows **⬡ Nexus**
 
 ### 2. Install this plugin
@@ -61,7 +61,7 @@ Then **Settings → Tools → Nexus MCP** → check **Enable Nexus MCP Server** 
 | Machine auth token | (read-only) | Shared on this PC; **Copy** writes the token only |
 | Remote UE | (empty) | One `host:mcpPort [token...]` per line; no subnet scan |
 
-Cross-machine and auth: [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md).
+Cross-machine and auth: [usage-guide §1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.en.md).
 
 Open the separate MCP client configuration window from Settings. Apply settings first: previews use saved settings and the actual listening port. Copy and Close stay at the bottom. If LAN is on and multiple NICs exist, pick an IP first. Copied Bearer is this machine's token only.
 
@@ -71,7 +71,7 @@ The status bar always shows the current connection state. The tooltip also indic
 
 While an asynchronous editor write is running, its UE instance bypasses read caches and disconnected snapshots. Caching resumes with a clean snapshot only after all known writes reach an observed terminal state, including failure or cancellation; cancelling a wait does not resume caching. Unobserved tasks and tracking overflow keep caching disabled conservatively; restart the proxy to reset this fallback.
 
-Batch calls and project-wide writes without an asset identity, including GameplayTags changes and partial failures, invalidate the target UE instance's read cache while preserving other instances. An explicit upstream `TtlSeconds: 0` disables caching and clears older snapshots for the same read target, including disconnected snapshots; both standard `structuredContent` and text JSON are supported. Failed reads are never cached. Large-response files are isolated between hubs; only files older than one hour are cleaned up.
+Batch calls and project-wide writes without an asset identity, including GameplayTags changes and partial failures, invalidate the target UE instance's read cache while preserving other instances. An explicit upstream `TtlSeconds: 0` disables caching and clears older snapshots for the same read target, including disconnected snapshots; both standard `structuredContent` and text JSON are supported. Failed reads are never cached. Section caches and disconnected snapshots require all read arguments except `Sections` to match; they are not reused across components, property paths, filters, or default-value baselines. Large-response files are isolated between hubs; only files older than one hour are cleaned up.
 
 Released 2.x and current tool-call formats are supported without rewriting requests. New payloads use a separate temporary root so older 2.x processes cannot delete them during startup cleanup.
 
@@ -80,7 +80,7 @@ Released 2.x and current tool-call formats are supported without rewriting reque
 | **⬢ project name** | Connected to UE |
 | **⬡ Nexus** | Not connected |
 
-Click to switch instances. A single instance auto-connects; multiple instances prefer `hostKind=Editor` (legacy UE without that field falls back to `netRole=Editor`). Tool-list cache is kept across disconnects. Read caches and disconnected snapshots are isolated by UE host/port. The popup can pause/resume agent forwarding. Session contract: [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.md).
+Click to switch instances. A single instance auto-connects; multiple instances prefer `hostKind=Editor` (legacy UE without that field falls back to `netRole=Editor`). Tool-list cache is kept across disconnects. Read caches and disconnected snapshots are isolated by UE host/port. The popup can pause/resume agent forwarding. Session contract: [proxy-session.md](https://github.com/bytepine/NexusLink/blob/master/docs/proxy-session.en.md).
 
 ---
 
@@ -90,7 +90,7 @@ Default `http://127.0.0.1:6800/stream`. On collision the port advances; use the 
 
 Client presets match Desktop: **Cursor / Windsurf**, **Codex**, **Claude Code / VS Code**, **CodeBuddy**, **Cline**, and **Roo Code**. Identical formats share an option; placement instructions stay outside the copied configuration. Codex generates TOML for `~/.codex/config.toml` (or custom `CODEX_HOME`) and uses Streamable HTTP automatically; other clients generate JSON members. Claude Code uses `mcpServers` in `.mcp.json`; VS Code uses `servers` in `.vscode/mcp.json`. Replace an existing entry with the same name and preserve other settings.
 
-**Cursor** (`~/.cursor/mcp.json`). Copy the token from the settings panel **Copy** next to the machine token. Multiple tokens: `Bearer <tok1>, <tok2>`. If **Require MCP auth** is off, omit `headers`. See [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md#11-身份验证).
+**Cursor** (`~/.cursor/mcp.json`). Copy the token from the settings panel **Copy** next to the machine token. Multiple tokens: `Bearer <tok1>, <tok2>`. If **Require MCP auth** is off, omit `headers`. See [usage-guide §1.1](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.en.md#11-authentication).
 
 ```json
 {
@@ -107,7 +107,7 @@ Client presets match Desktop: **Cursor / Windsurf**, **Codex**, **Claude Code / 
 
 Legacy MCP clients can use `http://127.0.0.1:6800/sse`. Select the matching client in the configuration window, then copy.
 
-When connected, `tools/list` merges UE tools. For concurrent multi-instance calls, pass `targetPort` in `arguments` (one-shot WS; does not change the long-lived binding).
+When connected, `tools/list` merges UE tools. For concurrent multi-instance calls, pass `targetPort` in `arguments` (one-shot WS; does not change the long-lived binding). The port must be an integer from 1024 to 65535; an invalid explicit port returns `-32602` without forwarding to the current instance or returning cached data.
 
 ---
 
@@ -127,7 +127,7 @@ The MCP server is per **project**. Extra windows may advance from `6800` (`6801`
 
 ### Logs
 
-Click **Nexus status bar → 打开日志目录 (Open log directory)**, including when the proxy is disabled. Each IDE/plugin startup creates a new `nexus-rider_<startup>_pid<PID>_<part>_*.log`; a new part is created after 4 MiB and old files are preserved. Project windows share the current startup log. Files are in `NexusMCP/` under Rider's log directory. Logs also remain in `idea.log`, accessible through **Help → Show Log in Explorer/Finder**.
+Click **Nexus status bar → Open Log Directory** (`打开日志目录`), including when the proxy is disabled. Each IDE/plugin startup creates a new `nexus-rider_<startup>_pid<PID>_<part>_*.log`; a new part is created after 4 MiB and old files are preserved. Project windows share the current startup log. Files are in `NexusMCP/` under Rider's log directory. Logs also remain in `idea.log`, accessible through **Help → Show Log in Explorer/Finder**.
 
 Default INFO/WARN logs include client versions, session creation and initialization, invalid or evicted sessions, HTTP rejections, SSE connections, call start/completion/duration/failure, server stop reasons and connection recovery. Match sessions by their hashed `session` value and calls by `request` within one server run. `missing_session` / `unknown_session` distinguish absent headers from unknown IDs. Tokens, complete session IDs, tool arguments and response bodies are omitted.
 
@@ -137,7 +137,7 @@ For disconnect reports, include the incident time, AI client name/version and cl
 
 ### Asset edits not on disk
 
-That is NexusLink persist behavior, not this proxy. See the [usage-guide FAQ](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.md).
+That is NexusLink persist behavior, not this proxy. See the [usage-guide FAQ](https://github.com/bytepine/NexusLink/blob/master/docs/usage-guide.en.md).
 
 ---
 
@@ -151,7 +151,7 @@ Output: `build/distributions/*.zip`. Debug: `./gradlew runIde` (local Rider 2025
 
 Run `./gradlew check buildPlugin` (`gradlew.bat check buildPlugin` on Windows) before submitting. The included `testProxyPolicy` task checks the PascalCase contract, local HTTP/WebSocket multi-instance routing, MCP session concurrency and capacity reclamation, and diagnostic redaction without launching Rider or UE. CI runs the same check before building.
 
-GitHub Release notes come only from `CHANGELOG.md` (`py scripts/extract_release_notes.py --version X.Y.Z --verify`). Tag: `nexus-rider-vX.Y.Z`. Record product changes in [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`.
+GitHub Release notes come only from `CHANGELOG.md` (`py scripts/extract_release_notes.py --version X.Y.Z --verify`). Tag: `nexus-rider-vX.Y.Z`. Record product changes in [CHANGELOG.md](CHANGELOG.en.md) `[Unreleased]`.
 
 Configure the `JETBRAINS_MARKETPLACE_TOKEN` repository secret under **Settings → Secrets and variables → Actions**, using a [Marketplace token](https://plugins.jetbrains.com/author/me/tokens) with permission to publish this plugin. Stable releases automatically submit the same ZIP from GitHub Release to JetBrains Marketplace; prereleases skip the store. The first plugin listing must be created manually, and uploaded updates remain subject to review.
 
