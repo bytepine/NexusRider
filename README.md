@@ -14,6 +14,8 @@
 
 ---
 
+普通写入和批处理在断线后也不会自动重发，读取仍可重连重试一次。写入断线或超时时，错误保留原有 `errorKind`，并附带 `executionStatus: "unknown"`、`retryable: false`；UE 可能已经执行或仍在执行，须先核对实际状态再决定后续操作。对应实例的旧读缓存及断线快照会失效。
+
 截图响应中的标准 MCP PNG/JPEG 图片块直接内联透传，并保留 FilePath 元数据；含图片的响应不做大文本转存或代理缓存。
 
 ## 依赖
@@ -145,7 +147,7 @@ MCP 按**项目**挂载。多窗口可能抢同一个端口 `6800`，后续窗�
 ./gradlew buildPlugin    # Windows: gradlew.bat buildPlugin
 ```
 
-提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发、旧/新工具清单重连刷新及实际调用、非法目标拒绝、MCP 会话并发与容量回收及日志字段脱敏；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
+提交前运行 `./gradlew check buildPlugin`（Windows：`gradlew.bat check buildPlugin`）。`check` 包含独立 `contract` 源集的 `testProxyPolicy`，验证当前 PascalCase 契约、本地 HTTP/WebSocket 多实例转发、旧/新工具清单重连刷新及实际调用、断线后的读重试与写不重试、写入结果未知时的缓存失效、非法目标拒绝、MCP 会话并发与容量回收及日志字段脱敏；也可单独运行该任务。无需启动 Rider 或 UE，CI 执行同一检查。
 
 产物：`build/distributions/*.zip`。调试：`./gradlew runIde`（需本机 Rider 2025.3 + JDK 21）。
 

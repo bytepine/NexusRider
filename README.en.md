@@ -14,6 +14,8 @@ Ports and switch layers: [NexusLink usage guide](https://github.com/bytepine/Nex
 
 Editor operations, including Slate, Automation, PCG, Niagara, animation, Game Features, semantic search and scene tools, use the same MCP session identity for creation, polling and wait cancellation. Progress notifications are supported. GetEditorOperation lists owned task summaries; ControlEditorOperation requests cancellation of owned tasks that expose a stop callback, using the same session route. Task responses are never cached and writes are not retried after disconnection. Live Coding does not promise cancellation.
 
+Ordinary writes and batches are not automatically resent after disconnection; reads may still retry once after reconnecting. A disconnected or timed-out write keeps its existing `errorKind` and adds `executionStatus: "unknown"` and `retryable: false`. UE may have executed the request or may still be running it: check its actual state before deciding what to do next. Stale read caches and disconnected snapshots for the affected instance are invalidated.
+
 Standard MCP PNG/JPEG screenshot blocks stay inline with their FilePath metadata. Responses containing images bypass large-text offloading and proxy caching.
 
 ## Requirements
@@ -149,7 +151,7 @@ That is NexusLink persist behavior, not this proxy. See the [usage-guide FAQ](ht
 
 Output: `build/distributions/*.zip`. Debug: `./gradlew runIde` (local Rider 2025.3 + JDK 21).
 
-Run `./gradlew check buildPlugin` (`gradlew.bat check buildPlugin` on Windows) before submitting. The included `testProxyPolicy` task checks the PascalCase contract, local HTTP/WebSocket multi-instance routing, MCP session concurrency and capacity reclamation, and diagnostic redaction without launching Rider or UE. CI runs the same check before building.
+Run `./gradlew check buildPlugin` (`gradlew.bat check buildPlugin` on Windows) before submitting. The included `testProxyPolicy` task checks the PascalCase contract, local HTTP/WebSocket multi-instance routing, read retries without resending writes after disconnection, cache invalidation when write outcomes are unknown, MCP session concurrency and capacity reclamation, and diagnostic redaction without launching Rider or UE. CI runs the same check before building.
 
 GitHub Release notes come only from `CHANGELOG.md` (`py scripts/extract_release_notes.py --version X.Y.Z --verify`). Tag: `nexus-rider-vX.Y.Z`. Record product changes in [CHANGELOG.md](CHANGELOG.en.md) `[Unreleased]`.
 

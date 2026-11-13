@@ -45,7 +45,7 @@ data class UnrealInstanceInfo(
  * - 发现：`GET /status` 探测（1 次 HTTP 请求即知存活 + 项目信息）
  * - 通信：WebSocket 长连接（JSON-RPC，无 MCP 握手开销）
  */
-class UnrealInstanceManager {
+class UnrealInstanceManager(internal val toolCallTimeoutMs: Long = TOOLS_CALL_TIMEOUT_MS) {
 
     private val log = logger<UnrealInstanceManager>()
 
@@ -539,7 +539,7 @@ class UnrealInstanceManager {
      * 通过 WebSocket 转发 tools/call。
      */
     fun forwardToolCall(params: JSONObject): WsRequestOutcome {
-        return sendWsRequest("tools/call", params, timeoutMs = TOOLS_CALL_TIMEOUT_MS)
+        return sendWsRequest("tools/call", params, timeoutMs = toolCallTimeoutMs)
     }
 
     /**
@@ -582,7 +582,7 @@ class UnrealInstanceManager {
     fun forwardToolCallToPort(
         port: Int,
         params: JSONObject,
-        timeoutMs: Long = TOOLS_CALL_TIMEOUT_MS,
+        timeoutMs: Long = toolCallTimeoutMs,
         host: String = LanHost.LOOPBACK,
         progress: ((JSONObject) -> Unit)? = null,
         isCancelled: (() -> Boolean)? = null,

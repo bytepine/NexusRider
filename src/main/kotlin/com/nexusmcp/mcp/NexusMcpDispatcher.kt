@@ -339,13 +339,25 @@ class NexusMcpDispatcher(
         } else {
             unrealManager.ensureLongConnection()
             callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
-            var first = unrealManager.forwardToolCall(forwardParams)
-            if (first.status == WsRequestStatus.DISCONNECTED && unrealManager.ensureLongConnection()) {
+            val first = unrealManager.forwardToolCall(forwardParams)
+            // 连接丢失时 UE 可能已执行写入；只能自动重发读取。
+            if (first.status == WsRequestStatus.DISCONNECTED && !callInfo.isWrite && unrealManager.ensureLongConnection()) {
                 log.info("工具转发重连后重试 tool=${McpDiagnostics.text(toolName)} capability=${McpDiagnostics.text(callInfo.capability)}")
                 callInfo = ProxySessionPolicy.parseCall(toolName, requestArgs, unrealManager.cacheScope)
                 unrealManager.forwardToolCall(forwardParams)
             } else {
                 first
+            }
+        }
+        if (outcome.status != WsRequestStatus.OK && callInfo.isWrite) {
+            // 未收到响应不代表未执行，旧读缓存与晚到读取都必须失效。
+            hub.store(callInfo, JSONObject().put("isError", true), now)
+        }
+        fun transportData(errorKind: String): Map<String, Any> = buildMap {
+            put("errorKind", errorKind)
+            if (callInfo.isWrite) {
+                put("executionStatus", "unknown")
+                put("retryable", false)
             }
         }
         when (outcome.status) {
@@ -354,27 +366,33 @@ class NexusMcpDispatcher(
                     log.warn("UE 未连接，返回缓存快照 tool=${McpDiagnostics.text(toolName)} capability=${McpDiagnostics.text(callInfo.capability)} snapshot=${McpDiagnostics.text(snap.snapshotAt)}")
                     return makeResult(id, ProxySessionHub.wrapDegraded(snap.result, snap.snapshotAt))
                 }
+                val message = if (callInfo.isWrite) {
+                    "UE connection was lost. The write may have executed; its outcome is unknown. Check UE state before deciding whether to retry."
+                } else proxyConfig.errorMessages.notConnected
                 unrealManager.proxyFeedbackBuffer.enqueue(
                     ProxyFeedbackEvent(
                         category = ProxyFeedbackCategory.DISCONNECT,
                         tool = toolName,
-                        errorText = proxyConfig.errorMessages.notConnected,
+                        errorText = message,
                     )
                 )
                 unrealManager.flushProxyFeedback()
                 return makeError(
-                    id, INTERNAL_ERROR, proxyConfig.errorMessages.notConnected,
-                    mapOf("errorKind" to "proxy_not_connected"),
+                    id, INTERNAL_ERROR, message,
+                    transportData("proxy_not_connected"),
                 )
             }
             WsRequestStatus.TIMEOUT -> {
-                val sec = UnrealInstanceManager.TOOLS_CALL_TIMEOUT_MS / 1000
-                val message = "UE request timed out after ${sec}s. ${proxyConfig.errorMessages.timeoutHint}"
+                val sec = unrealManager.toolCallTimeoutMs / 1000
+                val hint = if (callInfo.isWrite) {
+                    "The write may still be running; its outcome is unknown. Check UE state before deciding whether to retry."
+                } else proxyConfig.errorMessages.timeoutHint
+                val message = "UE request timed out after ${sec}s. $hint"
                 unrealManager.proxyFeedbackBuffer.enqueue(
                     ProxyFeedbackEvent(category = ProxyFeedbackCategory.TIMEOUT, tool = toolName, errorText = message)
                 )
                 unrealManager.flushProxyFeedback()
-                return makeError(id, INTERNAL_ERROR, message, mapOf("errorKind" to "proxy_timeout"))
+                return makeError(id, INTERNAL_ERROR, message, transportData("proxy_timeout"))
             }
             WsRequestStatus.OK -> { /* continue */ }
         }

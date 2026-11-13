@@ -9,6 +9,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Ordinary writes and batches are no longer resent after disconnection. Timed-out or disconnected writes return `executionStatus: "unknown"` and `retryable: false`, invalidate stale caches for the affected instance, and ask callers to check UE state first.
+
 ## [2.3.3] - 2026-11-10
 
 ### Fixed

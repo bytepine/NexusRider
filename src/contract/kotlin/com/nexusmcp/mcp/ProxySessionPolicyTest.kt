@@ -24,6 +24,8 @@ fun main() {
     testDiagnostics()
     testStartupLogs(testRoot.resolve("startup-logs").toPath())
     testHttpSessions()
+    testDisconnectedWriteNotRetried()
+    testUnknownWriteOutcome()
     testLegacyV2Compatibility()
     testEditorOperationWire()
     testCacheContracts()
@@ -166,7 +168,11 @@ private fun testLegacyV2Compatibility() {
 }
 
 /** 本地 HTTP/WS 协议替身，验证真实 Manager 与 Dispatcher，不启动 UE。 */
-private class RoutingInstance(name: String, private val toolNames: List<String> = emptyList()) : AutoCloseable {
+private class RoutingInstance(
+    name: String,
+    private val toolNames: List<String> = emptyList(),
+    private val disconnectFirstCall: Boolean = false,
+) : AutoCloseable {
     val calls = AtomicInteger()
     private val operationOwners = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val ready = CountDownLatch(1)
@@ -188,7 +194,12 @@ private class RoutingInstance(name: String, private val toolNames: List<String> 
                         .put("error", JSONObject().put("code", -32601).put("message", "Tool not found")).toString())
                     return
                 }
-                calls.incrementAndGet()
+                val callNumber = calls.incrementAndGet()
+                // 模拟 UE 已执行工具，但响应返回前连接丢失。
+                if (disconnectFirstCall && callNumber == 1) {
+                    conn.close()
+                    return
+                }
                 val args = request.getJSONObject("params").optJSONObject("arguments")
                 if (args?.optBoolean("ContractTimeout") == true) return
                 result.put("content", JSONArray().put(JSONObject().put("type", "text")
@@ -207,7 +218,12 @@ private class RoutingInstance(name: String, private val toolNames: List<String> 
                 if (args?.optBoolean("ContractFailure") == true) result.put("isError", true).put("structuredContent",
                     JSONObject().put("ErrorKind", "ArgInvalid").put("bRolledBack", false).put("Error", "contract failure"))
             }
-            conn.send(JSONObject().put("jsonrpc", "2.0").put("id", request.opt("id")).put("result", result).toString())
+            try {
+                conn.send(JSONObject().put("jsonrpc", "2.0").put("id", request.opt("id")).put("result", result).toString())
+            } catch (error: org.java_websocket.exceptions.WebsocketNotConnectedException) {
+                // 故障注入已主动断开，队列中的代理反馈可能随后抵达；其他场景仍报告异常。
+                if (!disconnectFirstCall) throw error
+            }
         }
     }
     private val http = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -223,6 +239,78 @@ private class RoutingInstance(name: String, private val toolNames: List<String> 
         http.start()
     }
     override fun close() { http.stop(0); ws.stop(1000) }
+}
+
+private fun testDisconnectedWriteNotRetried() {
+    for (capability in listOf("ManageAssetBlueprint", "GetAssetBlueprint")) {
+        RoutingInstance("response-lost", disconnectFirstCall = true).use { instance ->
+            val manager = UnrealInstanceManager()
+            try {
+                manager.scanPortStart = instance.port; manager.scanPortEnd = instance.port
+                check(manager.connectTo(instance.port, true))
+                val dispatcher = NexusMcpDispatcher(manager)
+                dispatcher.dispatch("""{"jsonrpc":"2.0","id":1,"method":"initialize"}""")
+                dispatcher.dispatch("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
+                val request = JSONObject().put("jsonrpc", "2.0").put("id", 2).put("method", "tools/call")
+                    .put("params", JSONObject().put("name", "CallCapability").put("arguments", JSONObject()
+                        .put("Capability", capability).put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP"))))
+                val response = JSONObject(dispatcher.dispatch(request.toString()))
+                if (capability == "ManageAssetBlueprint") {
+                    check(instance.calls.get() == 1) { "write was executed again after losing its response: $response" }
+                    val data = response.getJSONObject("error").getJSONObject("data")
+                    check(data.getString("errorKind") == "proxy_not_connected")
+                    check(data.getString("executionStatus") == "unknown" && !data.getBoolean("retryable"))
+                } else {
+                    check(instance.calls.get() == 2 && response.has("result")) { "read must still retry once after reconnecting: $response" }
+                }
+            } finally { manager.disconnect() }
+        }
+    }
+}
+
+/** 真实 HTTP/WS 故障覆盖默认/显式路由、两代工具名、直调及批处理。 */
+private fun testUnknownWriteOutcome() {
+    for (timeout in listOf(false, true)) for (explicit in listOf(false, true)) {
+        for (wire in listOf("CallCapability", "ManageAssetBlueprint", "call_capability", "batch")) {
+            RoutingInstance("unknown-write", disconnectFirstCall = !timeout).use { instance ->
+                val manager = UnrealInstanceManager(toolCallTimeoutMs = 200L)
+                try {
+                    manager.scanPortStart = instance.port; manager.scanPortEnd = instance.port
+                    check(manager.connectTo(instance.port, true))
+                    val dispatcher = NexusMcpDispatcher(manager)
+                    dispatcher.dispatch("""{"jsonrpc":"2.0","id":1,"method":"initialize"}""")
+                    dispatcher.dispatch("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
+                    val args = when (wire) {
+                        "ManageAssetBlueprint" -> JSONObject().put("AssetPath", "/synthetic/BP")
+                        "call_capability" -> JSONObject().put("capability", "manage_asset_blueprint")
+                            .put("arguments", JSONObject().put("assetPath", "/synthetic/BP"))
+                        "batch" -> JSONObject().put("Calls", JSONArray().put(JSONObject().put("Capability", "ManageAssetBlueprint")
+                            .put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP"))))
+                        else -> JSONObject().put("Capability", "ManageAssetBlueprint")
+                            .put("Arguments", JSONObject().put("AssetPath", "/synthetic/BP"))
+                    }
+                    if (explicit) args.put("targetPort", instance.port)
+                    if (timeout) args.put("ContractTimeout", true)
+                    val read = ProxySessionPolicy.parseCall("GetAssetBlueprint", JSONObject().put("AssetPath", "/synthetic/BP"), manager.cacheScope)
+                    val otherRead = ProxySessionPolicy.parseCall("GetAssetBlueprint", JSONObject().put("AssetPath", "/synthetic/BP"), "127.0.0.1:1024")
+                    for (cached in listOf(read, otherRead)) manager.sessionHub.store(cached, JSONObject(), System.currentTimeMillis())
+                    val before = manager.sessionHub.cacheGeneration()
+                    val request = JSONObject().put("jsonrpc", "2.0").put("id", 2).put("method", "tools/call")
+                        .put("params", JSONObject().put("name", if (wire == "batch") "CallCapability" else wire).put("arguments", args))
+                    val response = JSONObject(dispatcher.dispatch(request.toString()))
+                    check(instance.calls.get() == 1) { "unknown write was retried ($wire timeout=$timeout explicit=$explicit): $response" }
+                    val error = response.getJSONObject("error")
+                    val data = error.getJSONObject("data")
+                    check(data.getString("errorKind") == if (timeout) "proxy_timeout" else "proxy_not_connected")
+                    check(data.getString("executionStatus") == "unknown" && !data.getBoolean("retryable")) { response.toString() }
+                    check(error.getString("message").contains("Check UE state")) { "must explain recovery without blind retry: $response" }
+                    val now = System.currentTimeMillis()
+                    check(manager.sessionHub.lookupFresh(read, now) == null && manager.sessionHub.lookupDegraded(read, now) == null) { "unknown write retained stale snapshots" }
+                    check(manager.sessionHub.cacheGeneration() > before && manager.sessionHub.lookupFresh(otherRead, now) != null) { "unknown write must invalidate only the target instance" }
+                } finally { manager.disconnect() }
+            }
+        }
+    }
 }
 
 private fun testCacheContracts() {

@@ -9,6 +9,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 普通写入与批处理在连接中断后不再自动重发；写入超时或断线返回 `executionStatus: "unknown"`、`retryable: false`，并清理受影响实例的旧缓存，提示先核对 UE 状态。
+
 ## [2.3.3] - 2026-11-10
 
 ### Fixed
